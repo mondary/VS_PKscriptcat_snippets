@@ -39,8 +39,18 @@ Vous pouvez modifier les paramètres de l'extension dans les réglages de VS Cod
 
 ## Comment l'utiliser
 
-1. Ouvrez un dossier contenant vos fichiers `.user.js`.
-2. Le serveur devrait démarrer automatiquement (vérifiez l'icône dans la barre d'état en bas à droite).
+1. Organisez vos scripts par site dans le dossier `scripts/` :
+   ```
+   scripts/
+   ├── github.com/
+   │   ├── user-script-1.user.js
+   │   └── user-script-2.user.js
+   ├── stackoverflow.com/
+   │   └── enhancement.user.js
+   └── reddit.com/
+       └── theme.user.js
+   ```
+2. Ouvrez ce dossier dans VS Code (le serveur devrait démarrer automatiquement).
 3. Connectez ScriptCat au serveur WebSocket.
 4. À chaque fois que vous sauvegardez un fichier `.user.js`, il sera instantanément mis à jour dans ScriptCat.
 
