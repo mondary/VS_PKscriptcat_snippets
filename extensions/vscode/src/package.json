@@ -1,0 +1,79 @@
+{
+  "name": "vs-pkscriptcatws",
+  "displayName": "VS_pkscriptcatws",
+  "description": "VS_pkscriptcatws - Bidirectional sync userscripts to ScriptCat browser extension",
+  "version": "1.0.0",
+  "publisher": "Cmondary",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "repository": "https://github.com/mondary/VS_pkscriptcatws",
+  "categories": [
+    "Other"
+  ],
+  "icon": "icon.png",
+  "activationEvents": [
+    "workspaceContains:**/*.user.js"
+  ],
+  "main": "extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "scriptcat-sync.start",
+        "title": "ScriptCat: Start Server"
+      },
+      {
+        "command": "scriptcat-sync.stop",
+        "title": "ScriptCat: Stop Server"
+      },
+      {
+        "command": "scriptcat-sync.push",
+        "title": "ScriptCat: Push Current Script"
+      },
+      {
+        "command": "scriptcat-sync.sync-all",
+        "title": "ScriptCat: Sync All Scripts"
+      },
+      {
+        "command": "scriptcat-sync.request-missing",
+        "title": "ScriptCat: Request Missing Scripts"
+      }
+    ],
+    "configuration": {
+      "title": "ScriptCat Sync",
+      "properties": {
+        "scriptcat-sync.port": {
+          "type": "number",
+          "default": 8642,
+          "description": "WebSocket port for ScriptCat connection"
+        },
+        "scriptcat-sync.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-start server when opening a workspace with userscripts"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "userscript",
+    "tampermonkey",
+    "scriptcat",
+    "sync",
+    "websocket"
+  ],
+  "author": "cmondary",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "extension.js",
+    "icon.png",
+    "package.json"
+  ],
+  "dependencies": {
+    "ws": "^8.19.0"
+  }
+}
