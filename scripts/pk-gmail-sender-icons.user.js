@@ -1,1 +1,92 @@
-// ==UserScript==\n// @name         PK Gmail Sender Icons\n// @namespace    http://tampermonkey.net/\n// @version      0.1\n// @description  Display sender favicons in Gmail\n// @author       You\n// @match        https://mail.google.com/*\n// @grant        none\n// ==/UserScript==\n\n(function() {\n    'use strict';\n\n    const FAVICON_SERVICE = 'https://www.google.com/s2/favicons?domain=';\n\n    function extractDomain(email) {\n        const match = email.match(/@([^>]+)/);\n        return match ? match[1] : null;\n    }\n\n    function createFaviconElement(domain) {\n        const img = document.createElement('img');\n        img.src = FAVICON_SERVICE + domain;\n        img.className = 'inboxsdk__button_iconImg';\n        img.style.marginRight = '5px';\n        img.style.verticalAlign = 'middle';\n        return img;\n    }\n\n    function addIconsToEmails() {\n        // Target both the inbox list and the email thread view\n        const emailRows = document.querySelectorAll('tr.zA:not([data-has-icon=\"true\"])');\n\n        emailRows.forEach(row => {\n            const nameElements = row.querySelectorAll('.yP, .zF');\n            nameElements.forEach(nameElement => {\n                const email = nameElement.getAttribute('email');\n                if (!email) return;\n\n                const domain = extractDomain(email);\n                if (!domain) return;\n\n                const favicon = createFaviconElement(domain);\n                nameElement.insertBefore(favicon, nameElement.firstChild);\n            });\n\n            row.setAttribute('data-has-icon', 'true');\n        });\n    }\n\n    // Create and add styles\n    const style = document.createElement('style');\n    style.textContent = `\n        .inboxsdk__button_iconImg {\n            width: 16px;\n            height: 16px;\n            margin-top: -3px;\n        }\n    `;\n    document.head.appendChild(style);\n\n    // Initial run and setup observer\n    const observer = new MutationObserver((mutations) => {\n        for (const mutation of mutations) {\n            if (mutation.addedNodes.length > 0) {\n                addIconsToEmails();\n                break;\n            }\n        }\n    });\n\n    // Start observing with a more specific target\n    const mainContent = document.querySelector('.AO');\n    if (mainContent) {\n        observer.observe(mainContent, {\n            childList: true,\n            subtree: true\n        });\n    } else {\n        // If main content is not found, observe body as fallback\n        observer.observe(document.body, {\n            childList: true,\n            subtree: true\n        });\n    }\n\n    // Run initial check\n    addIconsToEmails();\n\n    // Add periodic check for dynamically loaded content\n    setInterval(addIconsToEmails, 2000);\n})();
+// ==UserScript==
+// @name         PK Gmail Sender Icons
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  Display sender favicons in Gmail
+// @author       You
+// @match        https://mail.google.com/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const FAVICON_SERVICE = 'https://www.google.com/s2/favicons?domain=';
+
+    function extractDomain(email) {
+        const match = email.match(/@([^>]+)/);
+        return match ? match[1] : null;
+    }
+
+    function createFaviconElement(domain) {
+        const img = document.createElement('img');
+        img.src = FAVICON_SERVICE + domain;
+        img.className = 'inboxsdk__button_iconImg';
+        img.style.marginRight = '5px';
+        img.style.verticalAlign = 'middle';
+        return img;
+    }
+
+    function addIconsToEmails() {
+        // Target both the inbox list and the email thread view
+        const emailRows = document.querySelectorAll('tr.zA:not([data-has-icon="true"])');
+
+        emailRows.forEach(row => {
+            const nameElements = row.querySelectorAll('.yP, .zF');
+            nameElements.forEach(nameElement => {
+                const email = nameElement.getAttribute('email');
+                if (!email) return;
+
+                const domain = extractDomain(email);
+                if (!domain) return;
+
+                const favicon = createFaviconElement(domain);
+                nameElement.insertBefore(favicon, nameElement.firstChild);
+            });
+
+            row.setAttribute('data-has-icon', 'true');
+        });
+    }
+
+    // Create and add styles
+    const style = document.createElement('style');
+    style.textContent = `
+        .inboxsdk__button_iconImg {
+            width: 16px;
+            height: 16px;
+            margin-top: -3px;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Initial run and setup observer
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                addIconsToEmails();
+                break;
+            }
+        }
+    });
+
+    // Start observing with a more specific target
+    const mainContent = document.querySelector('.AO');
+    if (mainContent) {
+        observer.observe(mainContent, {
+            childList: true,
+            subtree: true
+        });
+    } else {
+        // If main content is not found, observe body as fallback
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    // Run initial check
+    addIconsToEmails();
+
+    // Add periodic check for dynamically loaded content
+    setInterval(addIconsToEmails, 2000);
+})();

@@ -1,1 +1,131 @@
-// ==UserScript==\n// @name         PK Gmail Bouton Inbox - Vue Liste Strict\n// @namespace    https://github.com/mondary\n// @version      11.0\n// @description  Affiche \"Nouveau mail\" uniquement sur la vue liste de l'inbox (#inbox) et le cache dans les messages/labels/autres vues. DÃ©tection amÃ©liorÃ©e URL+DOM+history API.\n// @author       cMondary\n// @match        https://mail.google.com/mail/u/*/*\n// @grant        none\n// ==/UserScript==\n\n(function() {\n    'use strict';\n\n    const BUTTON_ID = 'pk-nouveau-mail-btn-inbox-only';\n    const COMPOSE_BUTTON_SELECTOR = 'div[role=\"button\"][gh=\"cm\"]';\n    const LIST_VIEW_SELECTOR = 'div[role=\"main\"] table[role=\"grid\"] tr[role=\"row\"]';\n    const COMPOSE_URL = 'https://mail.google.com/mail/u/0/#inbox?compose=new';\n\n    let debounceTimer = null;\n\n    function triggerCompose() {\n        window.location.href = COMPOSE_URL;\n    }\n\n    function createButton() {\n        if (document.getElementById(BUTTON_ID)) return;\n\n        const styleId = 'pk-nouveau-mail-style';\n        if (!document.getElementById(styleId)) {\n            const s = document.createElement('style');\n            s.id = styleId;\n            s.textContent = `\n                #${BUTTON_ID} {\n                    position: fixed; bottom: 32px; right: 64px; z-index: 2147483647;\n                    background: #1a73e8; color: #fff; border: none; border-radius: 50px;\n                    padding: 12px 22px; font-size: 16px;\n                    font-family: 'Google Sans', Arial, sans-serif;\n                    box-shadow: 0 4px 16px rgba(0,0,0,0.2);\n                    cursor: pointer; transition: background 0.15s, opacity 0.15s;\n                    opacity: 0.96;\n                }\n                #${BUTTON_ID}:hover { background: #1765c1; opacity: 1; }\n            `;\n            document.head.appendChild(s);\n        }\n\n        const btn = document.createElement('button');\n        btn.id = BUTTON_ID;\n        btn.type = 'button';\n        btn.innerText = 'Nouveau mail';\n        btn.addEventListener('click', triggerCompose);\n        document.body.appendChild(btn);\n    }\n\n    function removeButton() {\n        const el = document.getElementById(BUTTON_ID);\n        if (el) el.remove();\n    }\n\n    function shouldShowButton() {\n        const rawHash = window.location.hash || '';\n        const hash = rawHash.split('?')[0];\n        const isInboxRootHash = (hash === '#inbox' || hash === '#inbox/');\n        const isOpenMessageHash = /\\/FM[A-Za-z0-9_-]+/.test(hash);\n        const listRows = document.querySelector(LIST_VIEW_SELECTOR);\n        const isListViewPresent = !!listRows;\n        if (isInboxRootHash && isListViewPresent && !isOpenMessageHash) return true;\n        return false;\n    }\n\n    function updateButtonDebounced() {\n        if (debounceTimer) clearTimeout(debounceTimer);\n        debounceTimer = setTimeout(() => {\n            try {\n                if (shouldShowButton()) createButton();\n                else removeButton();\n            } catch (e) {\n                console.error('PK Gmail bouton error:', e);\n            }\n        }, 120);\n    }\n\n    function startMainObserver() {\n        const main = document.querySelector('div[role=\"main\"]');\n        if (!main) return;\n        const mo = new MutationObserver(updateButtonDebounced);\n        mo.observe(main, { childList: true, subtree: true });\n        return mo;\n    }\n\n    function hookHistoryEvents() {\n        const _push = history.pushState;\n        const _replace = history.replaceState;\n        history.pushState = function() {\n            const res = _push.apply(this, arguments);\n            window.dispatchEvent(new Event('locationchange'));\n            return res;\n        };\n        history.replaceState = function() {\n            const res = _replace.apply(this, arguments);\n            window.dispatchEvent(new Event('locationchange'));\n            return res;\n        };\n        window.addEventListener('popstate', () => window.dispatchEvent(new Event('locationchange')));\n    }\n\n    function safeInit() {\n        updateButtonDebounced();\n        hookHistoryEvents();\n        window.addEventListener('locationchange', updateButtonDebounced);\n        window.addEventListener('hashchange', updateButtonDebounced);\n\n        const tryAttach = () => {\n            const main = document.querySelector('div[role=\"main\"]');\n            if (main) {\n                startMainObserver();\n                updateButtonDebounced();\n                clearInterval(attInterval);\n            }\n        };\n        const attInterval = setInterval(tryAttach, 400);\n        setTimeout(() => clearInterval(attInterval), 20000);\n    }\n\n    if (document.readyState === 'complete' || document.readyState === 'interactive') {\n        safeInit();\n    } else {\n        window.addEventListener('DOMContentLoaded', safeInit);\n    }\n\n})(); \n
+// ==UserScript==
+// @name         PK Gmail Bouton Inbox - Vue Liste Strict
+// @namespace    https://github.com/mondary
+// @version      11.0
+// @description  Affiche "Nouveau mail" uniquement sur la vue liste de l'inbox (#inbox) et le cache dans les messages/labels/autres vues. DÃ©tection amÃ©liorÃ©e URL+DOM+history API.
+// @author       cMondary
+// @match        https://mail.google.com/mail/u/*/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const BUTTON_ID = 'pk-nouveau-mail-btn-inbox-only';
+    const COMPOSE_BUTTON_SELECTOR = 'div[role="button"][gh="cm"]';
+    const LIST_VIEW_SELECTOR = 'div[role="main"] table[role="grid"] tr[role="row"]';
+    const COMPOSE_URL = 'https://mail.google.com/mail/u/0/#inbox?compose=new';
+
+    let debounceTimer = null;
+
+    function triggerCompose() {
+        window.location.href = COMPOSE_URL;
+    }
+
+    function createButton() {
+        if (document.getElementById(BUTTON_ID)) return;
+
+        const styleId = 'pk-nouveau-mail-style';
+        if (!document.getElementById(styleId)) {
+            const s = document.createElement('style');
+            s.id = styleId;
+            s.textContent = `
+                #${BUTTON_ID} {
+                    position: fixed; bottom: 32px; right: 64px; z-index: 2147483647;
+                    background: #1a73e8; color: #fff; border: none; border-radius: 50px;
+                    padding: 12px 22px; font-size: 16px;
+                    font-family: 'Google Sans', Arial, sans-serif;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+                    cursor: pointer; transition: background 0.15s, opacity 0.15s;
+                    opacity: 0.96;
+                }
+                #${BUTTON_ID}:hover { background: #1765c1; opacity: 1; }
+            `;
+            document.head.appendChild(s);
+        }
+
+        const btn = document.createElement('button');
+        btn.id = BUTTON_ID;
+        btn.type = 'button';
+        btn.innerText = 'Nouveau mail';
+        btn.addEventListener('click', triggerCompose);
+        document.body.appendChild(btn);
+    }
+
+    function removeButton() {
+        const el = document.getElementById(BUTTON_ID);
+        if (el) el.remove();
+    }
+
+    function shouldShowButton() {
+        const rawHash = window.location.hash || '';
+        const hash = rawHash.split('?')[0];
+        const isInboxRootHash = (hash === '#inbox' || hash === '#inbox/');
+        const isOpenMessageHash = /\/FM[A-Za-z0-9_-]+/.test(hash);
+        const listRows = document.querySelector(LIST_VIEW_SELECTOR);
+        const isListViewPresent = !!listRows;
+        if (isInboxRootHash && isListViewPresent && !isOpenMessageHash) return true;
+        return false;
+    }
+
+    function updateButtonDebounced() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            try {
+                if (shouldShowButton()) createButton();
+                else removeButton();
+            } catch (e) {
+                console.error('PK Gmail bouton error:', e);
+            }
+        }, 120);
+    }
+
+    function startMainObserver() {
+        const main = document.querySelector('div[role="main"]');
+        if (!main) return;
+        const mo = new MutationObserver(updateButtonDebounced);
+        mo.observe(main, { childList: true, subtree: true });
+        return mo;
+    }
+
+    function hookHistoryEvents() {
+        const _push = history.pushState;
+        const _replace = history.replaceState;
+        history.pushState = function() {
+            const res = _push.apply(this, arguments);
+            window.dispatchEvent(new Event('locationchange'));
+            return res;
+        };
+        history.replaceState = function() {
+            const res = _replace.apply(this, arguments);
+            window.dispatchEvent(new Event('locationchange'));
+            return res;
+        };
+        window.addEventListener('popstate', () => window.dispatchEvent(new Event('locationchange')));
+    }
+
+    function safeInit() {
+        updateButtonDebounced();
+        hookHistoryEvents();
+        window.addEventListener('locationchange', updateButtonDebounced);
+        window.addEventListener('hashchange', updateButtonDebounced);
+
+        const tryAttach = () => {
+            const main = document.querySelector('div[role="main"]');
+            if (main) {
+                startMainObserver();
+                updateButtonDebounced();
+                clearInterval(attInterval);
+            }
+        };
+        const attInterval = setInterval(tryAttach, 400);
+        setTimeout(() => clearInterval(attInterval), 20000);
+    }
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        safeInit();
+    } else {
+        window.addEventListener('DOMContentLoaded', safeInit);
+    }
+
+})(); 

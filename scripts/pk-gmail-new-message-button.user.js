@@ -1,1 +1,72 @@
-// ==UserScript==\n// @name         PK Gmail New Message Button\n// @namespace    https://github.com/mondary\n// @version      1.0\n// @description  Add a New Message button next to Gmail logo\n// @author       cMondary\n// @match        https://mail.google.com/*\n// @grant        none\n// ==/UserScript==\n\n(function() {\n    'use strict';\n\n    const BUTTON_STYLES = `\n        .new-message-button {\n            background-color: #c2e7ff !important;\n            color: #001d35 !important;\n            padding: 8px 16px !important;\n            border-radius: 16px !important;\n            font-family: \"Google Sans\", Roboto, Arial, sans-serif !important;\n            font-size: 14px !important;\n            font-weight: 500 !important;\n            cursor: pointer !important;\n            transition: background-color 0.2s !important;\n            white-space: nowrap !important;\n            display: flex !important;\n            align-items: center !important;\n            text-decoration: none !important;\n            border: none !important;\n            outline: none !important;\n            margin-left: 16px !important;\n        }\n\n        .new-message-button:hover {\n            background-color: #95d1ff !important;\n        }\n    `;\n\n    // Add styles to document\n    const styleSheet = document.createElement('style');\n    styleSheet.textContent = BUTTON_STYLES;\n    document.head.appendChild(styleSheet);\n\n    // Create and insert the button\n    function createNewMessageButton() {\n        const logoContainer = document.querySelector('.gb_ud.gb_sd.gb_xd');\n        if (!logoContainer || logoContainer.querySelector('.new-message-button')) return;\n\n        const button = document.createElement('button');\n        button.className = 'new-message-button';\n        button.textContent = 'New Message';\n        button.onclick = () => {\n            // Open compose window using direct URL\n            window.location.href = 'https://mail.google.com/mail/u/0/#inbox?compose=new';\n        };\n\n        logoContainer.style.display = 'flex';\n        logoContainer.style.alignItems = 'center';\n        logoContainer.appendChild(button);\n    }\n\n    // Create a MutationObserver to watch for DOM changes\n    const observer = new MutationObserver((mutations) => {\n        createNewMessageButton();\n    });\n\n    // Start observing the document with the configured parameters\n    observer.observe(document.body, { childList: true, subtree: true });\n\n    // Initial creation attempt\n    createNewMessageButton();\n})();
+// ==UserScript==
+// @name         PK Gmail New Message Button
+// @namespace    https://github.com/mondary
+// @version      1.0
+// @description  Add a New Message button next to Gmail logo
+// @author       cMondary
+// @match        https://mail.google.com/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const BUTTON_STYLES = `
+        .new-message-button {
+            background-color: #c2e7ff !important;
+            color: #001d35 !important;
+            padding: 8px 16px !important;
+            border-radius: 16px !important;
+            font-family: "Google Sans", Roboto, Arial, sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 500 !important;
+            cursor: pointer !important;
+            transition: background-color 0.2s !important;
+            white-space: nowrap !important;
+            display: flex !important;
+            align-items: center !important;
+            text-decoration: none !important;
+            border: none !important;
+            outline: none !important;
+            margin-left: 16px !important;
+        }
+
+        .new-message-button:hover {
+            background-color: #95d1ff !important;
+        }
+    `;
+
+    // Add styles to document
+    const styleSheet = document.createElement('style');
+    styleSheet.textContent = BUTTON_STYLES;
+    document.head.appendChild(styleSheet);
+
+    // Create and insert the button
+    function createNewMessageButton() {
+        const logoContainer = document.querySelector('.gb_ud.gb_sd.gb_xd');
+        if (!logoContainer || logoContainer.querySelector('.new-message-button')) return;
+
+        const button = document.createElement('button');
+        button.className = 'new-message-button';
+        button.textContent = 'New Message';
+        button.onclick = () => {
+            // Open compose window using direct URL
+            window.location.href = 'https://mail.google.com/mail/u/0/#inbox?compose=new';
+        };
+
+        logoContainer.style.display = 'flex';
+        logoContainer.style.alignItems = 'center';
+        logoContainer.appendChild(button);
+    }
+
+    // Create a MutationObserver to watch for DOM changes
+    const observer = new MutationObserver((mutations) => {
+        createNewMessageButton();
+    });
+
+    // Start observing the document with the configured parameters
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Initial creation attempt
+    createNewMessageButton();
+})();

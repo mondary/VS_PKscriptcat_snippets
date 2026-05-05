@@ -2,7 +2,7 @@
 // @name         GitHub License Stickers
 // @namespace    https://github.com/mondary
 // @version      0.3.0
-// @description  Met en évidence les licences GitHub sous forme de stickers propres.
+// @description  Met en Ã©vidence les licences GitHub sous forme de stickers propres.
 // @author       cmondary
 // @homepageURL  https://github.com/mondary
 // @supportURL   https://github.com/mondary
@@ -77,7 +77,7 @@
     element.classList.add("gh-license-sticker");
     element.classList.add(`gh-license-${license.key}`);
 
-    // ⚠️ ON GARDE LE TEXTE ORIGINAL
+    // â ï¸ ON GARDE LE TEXTE ORIGINAL
     const originalText = element.textContent.trim();
     element.setAttribute("title", originalText);
     element.textContent = originalText;
