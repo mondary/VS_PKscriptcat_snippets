@@ -9,7 +9,7 @@
 ## 📁 Structure du projet
 
 ```
-├── /scripts/              # Tous vos userscripts
+├── /snippets/              # Tous vos userscripts
 │   └── github_license_stickers.user.js
 ├── /extensions/vscode/
 │   ├── /src/             # Source de l'extension VS Code
@@ -54,7 +54,7 @@
 ### 3. Configuration
 - **Port WebSocket** : 8642 (configurable)
 - **Auto-connect** : Activé par défaut
-- **Dossier scripts** : `/scripts/`
+- **Dossier scripts** : `/snippets/`
 
 ## 🧾 Commands VS Code
 

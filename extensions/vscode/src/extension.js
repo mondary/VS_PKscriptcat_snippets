@@ -8,7 +8,7 @@ let statusBar = null;
 let clients = new Set();
 const scriptRegistry = new Map(); // Registry des scripts locaux
 let lastScriptSync = 0;
-const SCRIPTS_DIR = 'scripts';
+const SCRIPTS_DIR = 'snippets';
 
 function activate(context) {
   console.log('ScriptCat Sync activé');
