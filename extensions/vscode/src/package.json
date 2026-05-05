@@ -1,13 +1,13 @@
 {
-  "name": "vs-pkscriptcatws",
-  "displayName": "VS_pkscriptcatws",
-  "description": "VS_pkscriptcatws - Bidirectional sync userscripts to ScriptCat browser extension",
+  "name": "vs-pkscriptcat-snippets",
+  "displayName": "VS_pkscriptcat_snippets",
+  "description": "VS_pkscriptcat_snippets - Bidirectional sync userscripts to ScriptCat browser extension",
   "version": "1.0.0",
   "publisher": "Cmondary",
   "engines": {
     "vscode": "^1.70.0"
   },
-  "repository": "https://github.com/mondary/VS_pkscriptcatws",
+  "repository": "https://github.com/mondary/VS_pkscriptcat_snippets",
   "categories": [
     "Other"
   ],

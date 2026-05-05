@@ -1,23 +1,23 @@
 {
-  "name": "scriptcat-sync-workspace",
-  "displayName": "ScriptCat Sync Workspace",
+  "name": "VS_pkscriptcat_snippets",
+  "displayName": "VS_pkscriptcat_snippets",
   "description": "Complete bidirectional sync solution for userscripts between VS Code and ScriptCat",
   "version": "1.0.0",
   "author": "cmondary",
   "license": "ISC",
   "directories": {
-    "scripts": "scripts",
+    "scripts": "snippets",
     "vscode": {
-      "src": "vscode/src",
-      "release": "vscode/release"
+      "src": "extensions/vscode/src",
+      "release": "extensions/vscode/release"
     },
     "chrome": {
-      "src": "chrome/src", 
-      "releases": "chrome/releases"
+      "src": "extensions/chrome/src",
+      "releases": "extensions/chrome/releases"
     }
   },
   "workspaces": [
-    "vscode/src",
-    "chrome/src"
+    "extensions/vscode/src",
+    "extensions/chrome/src"
   ]
 }

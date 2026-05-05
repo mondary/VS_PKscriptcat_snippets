@@ -138,7 +138,7 @@ vsce package
 ## 🧪 Installation (Antigravity)
 
 ```bash
-code --install-extension Cmondary.vs-pkscriptcatws
+code --install-extension Cmondary.vs-pkscriptcat-snippets
 ```
 
 ## 🧾 Changelog
