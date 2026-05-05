@@ -16,3 +16,11 @@ out/
 tmp/
 temp/
 .DS_Store
+
+openspec/
+
+# Local helper/debug files
+/server.log
+/scripts_server.js
+/tools/*.log
+/tools/scripts_server.js
