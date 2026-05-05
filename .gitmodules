@@ -1,0 +1,3 @@
+[submodule "extensions/chrome/src"]
+	path = extensions/chrome/src
+	url = https://github.com/mondary/scriptcat.git
