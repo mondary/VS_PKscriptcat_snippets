@@ -1,59 +1,96 @@
-# VS_pkscriptcatws
+# ScriptCat Sync Workspace
 
-Extension VS Code pour synchroniser vos userscripts (`.user.js`) directement avec l'extension de navigateur [ScriptCat](https://scriptcat.org/).
+![Project icon](extensions/vscode/src/icon.png)
 
-## Fonctionnalités
+[🇫🇷 FR](README.md) · [🇬🇧 EN](README_en.md)
 
-- **Serveur WebSocket Intégré** : Démarre un serveur local pour communiquer avec ScriptCat.
-- **Auto-Sync** : Envoie automatiquement vos scripts à ScriptCat lors de chaque sauvegarde d'un fichier `.user.js`.
-- **Barre d'État** : Affiche l'état de la connexion et le nombre de clients connectés directement dans la barre d'état de VS Code.
-- **Poussée Manuelle** : Permet d'envoyer manuellement le script ouvert vers le navigateur.
+✅ Solution complète de synchronisation bidirectionnelle de userscripts entre VS Code et ScriptCat.
 
-## Installation
+## 📁 Structure du projet
 
-1. Installez l'extension dans VS Code.
-2. Assurez-vous d'avoir l'extension **ScriptCat** installée dans votre navigateur.
-3. Configurez ScriptCat pour se connecter au serveur WebSocket (port par défaut : `8642`).
+```
+├── /scripts/              # Tous vos userscripts
+│   └── github_license_stickers.user.js
+├── /extensions/vscode/
+│   ├── /src/             # Source de l'extension VS Code
+│   └── /release/         # Version buildée/prête à publier
+│       ├── extension.js  # ✅ PRÊT
+│       ├── icon.png     # ✅ PRÊT  
+│       └── package.json  # ✅ PRÊT
+├── /extensions/chrome/
+│   ├── /src/             # Source de ScriptCat (modifié)
+│   └── /release/         # Versions buildées de Scriptcat
+│       ├── simple_manifest.json      # ✅ PRÊT
+│       ├── service_worker_sync.js    # ✅ PRÊT
+│       ├── popup.html                # ✅ PRÊT
+│       └── README_INSTALL.md         # ✅ PRÊT
+└── README.md
+```
 
-## Assets
+## ✅ Fonctionnalités
 
-Les logos carrés pour le Marketplace sont générés dans `release/` :
-- `release/logo-128.png`
-- `release/logo-256.png`
-- `release/logo-512.png`
+- 🔁 **Synchronisation bidirectionnelle** complète
+- 📤 **Push** automatique des scripts locaux vers ScriptCat
+- 📥 **Pull** automatique des scripts depuis ScriptCat  
+- 🔄 **Sync en temps réel** via WebSocket
+- 🗂️ **Organisation par préfixes** (github_, reddit_, etc.)
+- ⚙️ **Configuration flexible** port et auto-connect
 
-## Commandes
+## 🧠 Utilisation
 
-| Commande | Description |
-| --- | --- |
-| `ScriptCat: Start Server` | Démarre le serveur WebSocket. |
-| `ScriptCat: Stop Server` | Arrête le serveur WebSocket. |
-| `ScriptCat: Push Current Script` | Envoie le script actuel au navigateur. |
+### 1. Installation VS Code Extension
+```bash
+# Utiliser les fichiers de extensions/vscode/release/
+# extension.js, icon.png, package.json
+```
 
-## Configuration
+### 2. Installation Chrome Extension  
+```bash
+# Aller à chrome://extensions/
+# Activer "Mode développeur"
+# "Charger décompressé" et sélectionner extensions/chrome/release/
+```
 
-Vous pouvez modifier les paramètres de l'extension dans les réglages de VS Code (`File` > `Preferences` > `Settings`) :
+### 3. Configuration
+- **Port WebSocket** : 8642 (configurable)
+- **Auto-connect** : Activé par défaut
+- **Dossier scripts** : `/scripts/`
 
-- `scriptcat-sync.port` : Le port WebSocket utilisé (par défaut `8642`).
-- `scriptcat-sync.autoConnect` : Démarre automatiquement le serveur à l'ouverture d'un projet contenant des userscripts (par défaut `true`).
+## 🧾 Commands VS Code
 
-## Comment l'utiliser
+- **ScriptCat: Start Server** : Lance le serveur WebSocket
+- **ScriptCat: Stop Server** : Arrête le serveur WebSocket  
+- **ScriptCat: Push Current Script** : Pousse le script actuel
+- **ScriptCat: Sync All Scripts** : Synchronisation complète bidirectionnelle ⭐
+- **ScriptCat: Request Missing Scripts** : Récupère les scripts manquants ⭐
 
-1. Organisez vos scripts par site dans le dossier `scripts/` :
-   ```
-   scripts/
-   ├── github.com/
-   │   ├── user-script-1.user.js
-   │   └── user-script-2.user.js
-   ├── stackoverflow.com/
-   │   └── enhancement.user.js
-   └── reddit.com/
-       └── theme.user.js
-   ```
-2. Ouvrez ce dossier dans VS Code (le serveur devrait démarrer automatiquement).
-3. Connectez ScriptCat au serveur WebSocket.
-4. À chaque fois que vous sauvegardez un fichier `.user.js`, il sera instantanément mis à jour dans ScriptCat.
+## 📡 Communication WebSocket
 
-## Licence
+```typescript
+interface Message {
+  type: 'script_list' | 'script_update' | 'script_delete' | 'sync_all';
+  data?: any;
+  timestamp?: number;
+}
+```
 
-ISC
+## 🎯 Test de la synchronisation
+
+1. **Démarrer VS Code** avec un workspace contenant des `.user.js`
+2. **Ouvrir l'extension Chrome** - devrait se connecter automatiquement
+3. **Ajouter/modifier un script** dans VS Code → devrait apparaître dans ScriptCat
+4. **Ajouter un script** dans ScriptCat → devrait apparaître dans VS Code
+5. **Utiliser les commandes** de synchronisation complète
+
+## 🧾 Changelog
+
+- **1.0.0** : ✅ Structure refactorisée, synchronisation bidirectionnelle PRÊTE
+- **0.1.2** : Correction de bugs et améliorations de stabilité
+- **0.1.1** : Ajout de la configuration autoConnect
+- **0.1.0** : Version initiale avec synchronisation de base
+
+## 🔗 Liens
+
+- EN README : README_en.md
+- Extension ScriptCat : [scriptcat.org](https://scriptcat.org/)
+- Documentation VS Code : [code.visualstudio.com](https://code.visualstudio.com/)

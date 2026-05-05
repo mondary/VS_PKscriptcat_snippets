@@ -6,3 +6,13 @@
 /GEMINI.md
 /GLM.md
 /OPENCODE.md
+node_modules/
+*.log
+coverage/
+.nyc_output/
+dist/
+build/
+out/
+tmp/
+temp/
+.DS_Store
