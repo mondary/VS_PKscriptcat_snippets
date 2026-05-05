@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /Users/clm/Documents/GitHub/PROJECTS/Chrome_GmailTabs/)",
+      "Read(//Users/clm/Documents/GitHub/PROJECTS/Chrome_GmailTabs/**)"
+    ]
+  }
+}
