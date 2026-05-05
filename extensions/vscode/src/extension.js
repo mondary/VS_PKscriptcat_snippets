@@ -1,12 +1,14 @@
 const vscode = require('vscode');
 const { WebSocketServer } = require('ws');
 const fs = require('fs').promises;
+const path = require('path');
 
 let wss = null;
 let statusBar = null;
 let clients = new Set();
 const scriptRegistry = new Map(); // Registry des scripts locaux
 let lastScriptSync = 0;
+const SCRIPTS_DIR = 'scripts';
 
 function activate(context) {
   console.log('ScriptCat Sync activé');
@@ -78,29 +80,36 @@ async function syncAllScripts() {
 
 async function sendScriptList() {
   try {
-    const scriptFiles = await fs.readdir('scripts');
+    const scriptFiles = await fs.readdir(SCRIPTS_DIR);
     const userScriptFiles = scriptFiles.filter(file => file.endsWith('.user.js'));
     
     const scriptList = [];
     
     for (const file of userScriptFiles) {
-      const content = await fs.readFile(`scripts/${file}`, 'utf8');
-      const name = file.replace('.user.js', '');
+      const filePath = path.join(SCRIPTS_DIR, file);
+      const content = await fs.readFile(filePath, 'utf8');
+      const meta = extractScriptMetadata(content);
+      const fileBaseName = file.replace('.user.js', '');
+      const scriptName = meta.name || fileBaseName;
+      const scriptId = fileBaseName;
+      const updated = (await fs.stat(filePath)).mtime.getTime();
       
-      scriptRegistry.set(name, {
-        path: `scripts/${file}`,
-        updated: (await fs.stat(`scripts/${file}`)).mtime.getTime(),
-        ...extractScriptMetadata(content)
+      scriptRegistry.set(scriptId, {
+        id: scriptId,
+        name: scriptName,
+        path: filePath,
+        updated,
+        ...meta
       });
       
       scriptList.push({
-        id: name,
-        name: name,
+        id: scriptId,
+        name: scriptName,
         file: file,
-        path: `scripts/${file}`,
+        path: filePath,
         code: content,
-        meta: extractScriptMetadata(content),
-        updated: (await fs.stat(`scripts/${file}`)).mtime.getTime(),
+        meta,
+        updated,
         local: true
       });
     }
@@ -133,6 +142,86 @@ function extractScriptMetadata(content) {
   }
   
   return metadata;
+}
+
+function toSlug(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
+function getScriptDisplayName(scriptData = {}) {
+  const codeMeta = scriptData.code ? parseUserScriptMeta(scriptData.code) : {};
+  return codeMeta.name || scriptData.meta?.name || scriptData.name || scriptData.id || 'script';
+}
+
+function buildScriptFileName(scriptData = {}) {
+  const displayName = getScriptDisplayName(scriptData);
+  const slug = toSlug(displayName) || `script-${Date.now()}`;
+  return `${slug}.user.js`;
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveScriptTargetPath(scriptData = {}) {
+  const preferredName = buildScriptFileName(scriptData);
+  const preferredPath = path.join(SCRIPTS_DIR, preferredName);
+
+  // 1) Existing by explicit file/path
+  const candidates = [];
+  if (scriptData.file) candidates.push(path.join(SCRIPTS_DIR, path.basename(scriptData.file)));
+  if (scriptData.path) candidates.push(path.join(SCRIPTS_DIR, path.basename(scriptData.path)));
+  if (scriptData.id) candidates.push(path.join(SCRIPTS_DIR, `${toSlug(scriptData.id)}.user.js`));
+  if (scriptData.name) candidates.push(path.join(SCRIPTS_DIR, `${toSlug(scriptData.name)}.user.js`));
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) return candidate;
+  }
+
+  // 2) Preferred name
+  if (!(await fileExists(preferredPath))) return preferredPath;
+
+  // 3) Collision strategy: suffix -2, -3...
+  const base = preferredName.replace(/\.user\.js$/i, '');
+  let i = 2;
+  while (true) {
+    const candidate = path.join(SCRIPTS_DIR, `${base}-${i}.user.js`);
+    if (!(await fileExists(candidate))) return candidate;
+    i += 1;
+  }
+}
+
+async function upsertScriptFromClient(scriptData = {}) {
+  if (!scriptData.code) return null;
+  await fs.mkdir(SCRIPTS_DIR, { recursive: true });
+  const filePath = await resolveScriptTargetPath(scriptData);
+  await fs.writeFile(filePath, scriptData.code, 'utf8');
+
+  const metadata = extractScriptMetadata(scriptData.code);
+  const id = scriptData.id || path.basename(filePath, '.user.js');
+  const name = metadata.name || scriptData.name || id;
+
+  scriptRegistry.set(id, {
+    id,
+    name,
+    path: filePath,
+    updated: Date.now(),
+    ...scriptData,
+    ...metadata
+  });
+
+  return { filePath, id, name };
 }
 
 function broadcastToClients(message) {
@@ -338,16 +427,11 @@ async function handleScriptListFromClient(scripts) {
   
   for (const script of scripts) {
     if (!script.local) { // Ne pas écraser les scripts locaux existants
-      const filePath = `scripts/${script.name}_${Date.now()}.user.js`;
-      
       try {
-        await fs.writeFile(filePath, script.code, 'utf8');
-        scriptRegistry.set(script.name, {
-          path: filePath,
-          updated: Date.now(),
-          ...script
-        });
-        console.log('📥 Script downloaded from ScriptCat:', script.name);
+        const saved = await upsertScriptFromClient(script);
+        if (saved) {
+          console.log('📥 Script downloaded from ScriptCat:', saved.name, '->', path.basename(saved.filePath));
+        }
       } catch (error) {
         console.error('Error saving script from client:', error);
       }
@@ -359,16 +443,10 @@ async function handleScriptUpdateFromClient(scriptData) {
   console.log('📥 Script update from client:', scriptData.name || 'Unknown');
   
   try {
-    const filePath = `scripts/${scriptData.name}_${Date.now()}.user.js`;
-    await fs.writeFile(filePath, scriptData.code, 'utf8');
-    
-    scriptRegistry.set(scriptData.name, {
-      path: filePath,
-      updated: Date.now(),
-      ...scriptData
-    });
-    
-    vscode.window.showInformationMessage(`Script updated: ${scriptData.name || 'Unknown'}`);
+    const saved = await upsertScriptFromClient(scriptData);
+    if (saved) {
+      vscode.window.showInformationMessage(`Script updated: ${saved.name}`);
+    }
   } catch (error) {
     console.error('Error updating script from client:', error);
   }
@@ -377,11 +455,13 @@ async function handleScriptUpdateFromClient(scriptData) {
 async function handleScriptDeleteFromClient(data) {
   console.log('🗑️ Script delete from client:', data.scriptId);
   
-  const script = Array.from(scriptRegistry.values()).find(s => s.id === data.scriptId);
+  const script = Array.from(scriptRegistry.values()).find((s) => (
+    s.id === data.scriptId || s.name === data.scriptId
+  ));
   if (script && script.path) {
     try {
       await fs.unlink(script.path);
-      scriptRegistry.delete(script.name);
+      scriptRegistry.delete(script.id || script.name);
       vscode.window.showInformationMessage(`Script deleted: ${script.name || data.scriptId}`);
     } catch (error) {
       console.error('Error deleting script:', error);
