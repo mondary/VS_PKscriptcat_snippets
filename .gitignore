@@ -22,5 +22,5 @@ openspec/
 # Local helper/debug files
 /server.log
 /scripts_server.js
-/tools/*.log
-/tools/scripts_server.js
+/extensions/vscode/tools/*.log
+/extensions/vscode/tools/scripts_server.js
