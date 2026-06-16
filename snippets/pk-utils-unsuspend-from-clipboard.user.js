@@ -1,1 +1,72 @@
-// ==UserScript==\n// @name         Unsuspend URL from Clipboard\n// @namespace    scriptcat\n// @version      1.0.0\n// @description  Decode suspended.html?url=... from clipboard and copy the real URL\n// @match        *://*/*\n// @grant        GM_setClipboard\n// ==/UserScript==\n\n(function () {\n  'use strict';\n\n  function safeDecode(s) {\n    try { return decodeURIComponent(s.replace(/\\+/g, '%20')); }\n    catch { return s; }\n  }\n\n  function extractRealUrl(anyUrl) {\n    let u;\n    try {\n      u = new URL(anyUrl);\n    } catch {\n      return null;\n    }\n    const encoded = u.searchParams.get('url');\n    if (!encoded) return null;\n    return safeDecode(encoded);\n  }\n\n  async function readClipboardText() {\n    // Fallback si navigator.clipboard est bloquÃ©\n    if (navigator.clipboard?.readText) {\n      try { return await navigator.clipboard.readText(); } catch {}\n    }\n    return null;\n  }\n\n  async function writeClipboardText(text) {\n    // PrioritÃ© au GM_setClipboard si dispo\n    if (typeof GM_setClipboard === 'function') {\n      try { GM_setClipboard(text); return true; } catch {}\n    }\n    if (navigator.clipboard?.writeText) {\n      try { await navigator.clipboard.writeText(text); return true; } catch {}\n    }\n    return false;\n  }\n\n  async function run() {\n    const clip = await readClipboardText();\n    if (!clip) {\n      console.log('[Unsuspend] Clipboard unreadable (permission).');\n      return;\n    }\n\n    const real = extractRealUrl(clip.trim());\n    if (!real) {\n      console.log('[Unsuspend] No suspended url= param found in clipboard.');\n      return;\n    }\n\n    const ok = await writeClipboardText(real);\n    console.log(ok\n      ? `[Unsuspend] Copied real URL: ${real}`\n      : `[Unsuspend] Real URL extracted but could not copy: ${real}`\n    );\n  }\n\n  // Expose pour lancement manuel si besoin\n  // Dans ScriptCat, tu peux aussi juste \"Run\" le script.\n  window.unsuspendFromClipboard = run;\n})();\n
+// ==UserScript==
+// @name         Unsuspend URL from Clipboard
+// @namespace    scriptcat
+// @version      1.0.0
+// @description  Decode suspended.html?url=... from clipboard and copy the real URL
+// @match        *://*/*
+// @grant        GM_setClipboard
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  function safeDecode(s) {
+    try { return decodeURIComponent(s.replace(/\\+/g, '%20')); }
+    catch { return s; }
+  }
+
+  function extractRealUrl(anyUrl) {
+    let u;
+    try {
+      u = new URL(anyUrl);
+    } catch {
+      return null;
+    }
+    const encoded = u.searchParams.get('url');
+    if (!encoded) return null;
+    return safeDecode(encoded);
+  }
+
+  async function readClipboardText() {
+    // Fallback si navigator.clipboard est bloquÃ©
+    if (navigator.clipboard?.readText) {
+      try { return await navigator.clipboard.readText(); } catch {}
+    }
+    return null;
+  }
+
+  async function writeClipboardText(text) {
+    // PrioritÃ© au GM_setClipboard si dispo
+    if (typeof GM_setClipboard === 'function') {
+      try { GM_setClipboard(text); return true; } catch {}
+    }
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(text); return true; } catch {}
+    }
+    return false;
+  }
+
+  async function run() {
+    const clip = await readClipboardText();
+    if (!clip) {
+      console.log('[Unsuspend] Clipboard unreadable (permission).');
+      return;
+    }
+
+    const real = extractRealUrl(clip.trim());
+    if (!real) {
+      console.log('[Unsuspend] No suspended url= param found in clipboard.');
+      return;
+    }
+
+    const ok = await writeClipboardText(real);
+    console.log(ok
+      ? `[Unsuspend] Copied real URL: ${real}`
+      : `[Unsuspend] Real URL extracted but could not copy: ${real}`
+    );
+  }
+
+  // Expose pour lancement manuel si besoin
+  // Dans ScriptCat, tu peux aussi juste \"Run\" le script.
+  window.unsuspendFromClipboard = run;
+})();
