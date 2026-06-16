@@ -14,7 +14,12 @@
 - 🔄 **Sync en temps réel** via WebSocket
 - 🗂️ **Organisation par préfixes** (pk-gmail, pk-github, pk-css, etc.)
 - ⚙️ **Configuration flexible** : port et auto-connect personnalisables
-- 📦 **50+ snippets inclus** : userscripts optimisés pour Gmail, GitHub, GG.deals, etc.
+- 📦 **99+ snippets inclus** : userscripts optimisés pour Gmail, GitHub, GG.deals, YouTube, etc.
+
+## 🔧 Bisync (mode économe disque)
+
+- Dry-run : `npx -y -p playwright-core node extensions/chrome/src/scripts/scriptcat-bisync.mjs`
+- Apply : `npx -y -p playwright-core node extensions/chrome/src/scripts/scriptcat-bisync.mjs --apply`
 
 ## 📚 Collection de Snippets
 
@@ -28,7 +33,7 @@
 | `pk-read-aloud-chatgpt` | Boutons 🗣️🔄⏹️ pour lire à haute voix les éléments prose |
 | Versions v2-v5 | Variantes avec améliorations progressives (navigation, regroupement, sources) |
 
-### 📧 Gmail - Scripts Core (8 scripts)
+### 📧 Gmail - Scripts Core (11 scripts)
 
 | Script | Description |
 |--------|-------------|
@@ -39,7 +44,11 @@
 | `pk-gmail-new-message-button` | Bouton "Nouveau message" à côté du logo Gmail |
 | `pk-gmail-no-spam-icon` | Icône de validation quand pas de spam |
 | `pk-gmail-sender-icons` | Affiche les favicons des expéditeurs dans Gmail |
+| `pk-gmail-sender-icons-alt` | Version alternative des icônes d'expéditeurs |
 | `pk-gmail-a-filtrer-les-messages-similaires` | Ajoute le bouton "Filtrer les similaires" dans la toolbar |
+| `pk-gmail-keyword-highlighter` | Surlignage des mots-clés importants dans les emails |
+| `pk-gmail-short-label-after-slash-only` | Raccourcis labels après slash uniquement |
+| `pk-keyword-highlighter-gmail-only` | Surlignage mots-clés Gmail exclusivement |
 
 ### 🎨 Gmail - CSS/Styling (20 scripts)
 
@@ -87,6 +96,63 @@
 | `pk-utils-unsuspend-current-page` | Version page courante du désuspender |
 | `pk-utils-unsuspend-from-clipboard` | Version presse-papiers du désuspender |
 | `pk-css-main` | Injecteur CSS principal auto-généré |
+
+### 🎨 Stylus - Scripts Gmail (40+ scripts)
+
+Styles CSS pour Gmail via Stylus (ancien et nouveau design)
+
+| Catégorie | Scripts |
+|-----------|---------|
+| **Gmail Moderne** | `stylus-gmail-fullwhite`, `stylus-gmail-marging`, `stylus-gmail-no-left-menu`, `stylus-gmail-scrollbar`, `stylus-gmail-searchbar`, `stylus-gmail-stars`, `stylus-gmail-sticky-topic`, `stylus-gmail-styling`, `stylus-gmail-topright`, `stylus-gmail-unread-grey`, `stylus-mail-google` |
+| **Gmail Classic** | `stylus-old-gmail-columns-old`, `stylus-old-gmail-columns-responsive`, `stylus-old-gmail-responsive-toolbar`, `stylus-old-gmail-responsive-toolbar-icon`, `stylus-old-gmail-stacked-old`, `stylus-old-gmail-stars-blue`, `stylus-old-gmail-starscolor`, `stylus-old-gmail-test-tabbar`, `stylus-old-gmail-topic-sticky-old` |
+| **Mail Google** | `stylus-mail-google-com-mail-u-0` (+ dup2, dup3) |
+
+### 🎨 Stylus - GitHub (3 scripts)
+
+| Script | Description |
+|--------|-------------|
+| `stylus-github-lines` | Amélioration des lignes de code GitHub |
+| `stylus-github-private` | Style pour repos privés GitHub |
+| `stylus-github-repositories-grid` | Vue grille des repos GitHub |
+
+### 🎨 Stylus - GG.deals (4 scripts)
+
+| Script | Description |
+|--------|-------------|
+| `stylus-gg-deals-deals-new-deals` | Style nouvelles offres GG.deals |
+| `stylus-gg-deals-mai-2024` | Design GG.deals mai 2024 |
+| `stylus-gg-deals-pkgrid` | Grille personnelle GG.deals |
+| `stylus-pk-gg-deals` | Style personnalisé GG.deals |
+
+### 🎨 Stylus - YouTube (2 scripts)
+
+| Script | Description |
+|--------|-------------|
+| `stylus-pk-sticky-youtube` | Headers sticky YouTube |
+| `stylus-pk-youtube-sticky-2` | Version 2 du sticky YouTube |
+
+### 🎨 Stylus - LinkedIn (1 script)
+
+| Script | Description |
+|--------|-------------|
+| `stylus-pk-linkedin` | Style personnalisé LinkedIn |
+
+### 🎨 Stylus - Divers (10+ scripts)
+
+| Script | Description |
+|--------|-------------|
+| `stylus-app-gomining-com-btc-wallets` | Style interface mining BTC |
+| `stylus-caisse-epargne-fr` | Style caisse épargne |
+| `stylus-fix-gutemberg` | Corrections Gutenberg |
+| `stylus-linkedin-pk` | LinkedIn personnalisé |
+| `stylus-mini-separateurs` | Mini séparateurs |
+| `stylus-mobile-free-fr` | Mobile Free |
+| `stylus-old-colomn-sender2` | Colonnes expéditeurs |
+| `stylus-old-degueu-chatgpt` | Style ChatGPT |
+| `stylus-pk-3`, `stylus-pk4` | Styles personnels |
+| `stylus-pkgrid-test` | Test grille |
+| `stylus-simp`, `stylus-simp2`, `stylus-simplify` | Styles simplifiés |
+| `stylus-store-steampowered-com-app-*` | Styles Steam |
 
 ## 🧠 Utilisation
 
