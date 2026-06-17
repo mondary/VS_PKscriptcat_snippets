@@ -4,7 +4,17 @@
 
 [🇫🇷 FR](README.md) · [🇬🇧 EN](README_en.md)
 
-✨ Solution complète de synchronisation bidirectionnelle de userscripts entre VS Code et ScriptCat, avec une collection de snippets prêts à l'emploi.
+✨ Solution complète de synchronisation bidirectionnelle de userscripts entre VS Code et ScriptCat, avec une collection de snippets personnels optimisés.
+
+## 🍴 Pourquoi ce fork ?
+
+Ce projet est un fork de [ScriptCat](https://github.com/scriptcat/scriptcat) né du besoin d'une intégration plus profonde et personnalisée entre l'éditeur de code et le navigateur. 
+
+Les motivations principales de ce fork sont :
+- 🚀 **Workflow Code-First** : Utiliser VS Code comme source de vérité unique pour le développement de scripts.
+- 🔄 **Synchronisation Bidirectionnelle Réelle** : Contrairement aux solutions standards, tout changement (création, renommage, suppression) est répercuté instantanément dans les deux sens via WebSocket.
+- 📦 **Collection de Snippets "Propres"** : Inclusion d'une bibliothèque de scripts personnels (`pk-` pour "Personal/PK scripts") développés au fil des années pour optimiser Gmail, ChatGPT, GitHub, etc.
+- 🎨 **Conversion Stylus vers Userscripts** : Un système pour transformer des styles CSS Stylus en userscripts autonomes, permettant de les versionner et de les synchroniser comme du code.
 
 ## ✅ Fonctionnalités
 
@@ -21,83 +31,55 @@
 - Dry-run : `npx -y -p playwright-core node extensions/chrome/src/scripts/scriptcat-bisync.mjs`
 - Apply : `npx -y -p playwright-core node extensions/chrome/src/scripts/scriptcat-bisync.mjs --apply`
 
-## 📚 Collection de Snippets
+## 📚 Collection de Snippets Personnels
 
-### 🤖 ChatGPT (5 scripts)
+Tous les scripts commençant par `pk-` sont des créations originales ou des adaptations poussées. Les scripts `stylus-` sont des portages de styles CSS.
 
-| Script | Description |
-|--------|-------------|
-| `pk-chatgpt-multi-pin-answers` | Épinglez plusieurs réponses par conversation ChatGPT avec panneau latéral |
-| `pk-chatgpt-sidebar-pin` | Épingler des discussions dans la barre latérale, style pinCHAT |
-| `pk-chatgpt-read-aloud` | Lecture vocale des réponses ChatGPT |
-| `pk-read-aloud-chatgpt` | Boutons 🗣️🔄⏹️ pour lire à haute voix les éléments prose |
-| Versions v2-v5 | Variantes avec améliorations progressives (navigation, regroupement, sources) |
+### 🏷️ Conventions
+- **pk-*** : Scripts de fonctionnalités (Javascript)
+- **pk-css-*** : Améliorations purement graphiques (Injection CSS)
+- **stylus-*** : Thèmes complets portés de Stylus
 
-### 📧 Gmail - Scripts Core (11 scripts)
+### 🤖 ChatGPT (Propriété de PK)
 
-| Script | Description |
-|--------|-------------|
-| `pk-gmail-custom-tabs` | Ajoute 3 onglets personnalisés pour filtrer les e-mails par labels |
-| `pk-gmail-filter-similar-always-visible` | Bouton picto permanent pour "Filtrer les messages similaires" |
-| `pk-gmail-icon-view` | Vue en icônes style Finder pour Gmail |
-| `pk-gmail-bouton-inbox-vue-liste-strict` | Affiche "Nouveau mail" uniquement sur la vue liste inbox |
-| `pk-gmail-new-message-button` | Bouton "Nouveau message" à côté du logo Gmail |
-| `pk-gmail-no-spam-icon` | Icône de validation quand pas de spam |
-| `pk-gmail-sender-icons` | Affiche les favicons des expéditeurs dans Gmail |
-| `pk-gmail-sender-icons-alt` | Version alternative des icônes d'expéditeurs |
-| `pk-gmail-a-filtrer-les-messages-similaires` | Ajoute le bouton "Filtrer les similaires" dans la toolbar |
-| `pk-gmail-keyword-highlighter` | Surlignage des mots-clés importants dans les emails |
-| `pk-gmail-short-label-after-slash-only` | Raccourcis labels après slash uniquement |
-| `pk-keyword-highlighter-gmail-only` | Surlignage mots-clés Gmail exclusivement |
+| Script | Description détaillée |
+|--------|-----------------------|
+| `pk-chatgpt-multi-pin-answers` | **Flagship script** : Permet d'épingler plusieurs réponses dans une discussion. Crée un index flottant pour naviguer rapidement entre les points clés d'une longue conversation. |
+| `pk-chatgpt-sidebar-pin` | Ajoute une fonctionnalité de "Favoris" dans la barre latérale de ChatGPT pour ne jamais perdre les discussions importantes. |
+| `pk-chatgpt-read-aloud` | Intègre la synthèse vocale pour écouter les réponses sans quitter l'onglet. |
 
-### 🎨 Gmail - CSS/Styling (20 scripts)
+### 📧 Gmail - L'expérience ultime
 
-| Script | Description |
-|--------|-------------|
-| `pk-css-gmail-white-style` | Interface Gmail en blanc pur |
-| `pk-css-gmail-full-white` | Mode blanc intégral Gmail |
-| `pk-css-gmail-margin` | Ajustement des marges Gmail |
-| `pk-css-gmail-no-left-menu` | Masquer le menu gauche Gmail |
-| `pk-css-gmail-scrollbar-grey` | Scrollbar grise élégante Gmail |
-| `pk-css-gmail-search-bar-center-white` | Barre de recherche centrée blanche |
-| `pk-css-gmail-stars-focus` | Mise en évidence des étoiles Gmail |
-| `pk-css-gmail-sticky-topic` | Sujet sticky dans Gmail |
-| `pk-css-gmail-top-right-buttons` | Boutons en haut à droite Gmail |
-| `pk-css-gmail-unread-color` | Couleur personnalisée pour les non-lus |
-| Versions `pk-css-pk-gmail-*` | Injecteurs CSS auto-générés pour les styles ci-dessus |
+| Script | Description détaillée |
+|--------|-----------------------|
+| `pk-gmail-custom-tabs` | Système d'onglets personnalisés (ex: "A traiter", "Urgent") injectés directement dans l'interface pour un tri rapide. |
+| `pk-gmail-keyword-highlighter` | **Outil d'analyse** : Surligne dynamiquement des mots-clés (noms de projets, montants, dates) pour une lecture rapide des emails. |
+| `pk-gmail-icon-view` | Transforme la liste d'emails en grille d'icônes, idéal pour visualiser rapidement les expéditeurs. |
+| `pk-gmail-sender-icons` | Récupère et affiche les favicons/avatars de chaque service (Amazon, GitHub, etc.) en face de chaque mail. |
 
-### 🐙 GitHub (2 scripts)
+### 🐙 GitHub & Développement
 
-| Script | Description |
-|--------|-------------|
-| `pk-github-license-stickers` | Met en évidence les licences GitHub sous forme de stickers colorés |
-| `pk-github-license-stickers-alt` | Version alternative des stickers de licence |
+| Script | Description détaillée |
+|--------|-----------------------|
+| `pk-github-license-stickers` | Affiche visuellement la licence du projet (MIT, GPL, etc.) dès l'en-tête du repo avec des couleurs distinctives. |
+| `stylus-github-repositories-grid` | Transforme la liste des dépôts en une grille moderne et compacte. |
 
-### 🎮 GG.deals (3 scripts)
+### 🎮 Gaming & Shopping
 
-| Script | Description |
-|--------|-------------|
-| `pk-ggdeals-grid-view` | Affiche les nouvelles offres GG.deals en grille |
-| `pk-gg-deals-new-deals-grid-view-corrected` | Version corrigée de la grille GG.deals |
-| `pk-css-ggdeals-colors` | Améliore les couleurs des icônes et backgrounds GG.deals |
+| Script | Description détaillée |
+|--------|-----------------------|
+| `pk-ggdeals-grid-view` | Force une vue grille sur GG.deals pour voir plus de promos d'un coup d'œil. |
+| `pk-css-ggdeals-colors` | Refonte des contrastes et des couleurs pour une meilleure lisibilité des prix. |
+| `stylus-store-steampowered-com-*` | Améliorations visuelles spécifiques pour les pages Steam. |
 
-### 💼 LinkedIn (1 script)
+### 🛠️ Utilitaires Système
 
-| Script | Description |
-|--------|-------------|
-| `pk-css-linkedin-width` | Ajuste la largeur LinkedIn et cache la sidebar |
+| Script | Description détaillée |
+|--------|-----------------------|
+| `pk-unsuspend-url-*` | Suite d'outils pour récupérer instantanément les URLs "suspendues" par des extensions comme The Great Suspender. |
+| `pk-css-main` | Le "Master CSS" qui regroupe les micro-ajustements globaux sur le web. |
 
-### 🛠️ Utilitaires (5 scripts)
-
-| Script | Description |
-|--------|-------------|
-| `pk-unsuspend-url-from-clipboard` | Décode les URLs suspendues depuis le presse-papiers |
-| `pk-unsuspend-url-the-great-suspender-similar` | Extrait et ouvre les URLs réelles depuis suspended.html |
-| `pk-utils-unsuspend-current-page` | Version page courante du désuspender |
-| `pk-utils-unsuspend-from-clipboard` | Version presse-papiers du désuspender |
-| `pk-css-main` | Injecteur CSS principal auto-généré |
-
-### 🎨 Stylus - Scripts Gmail (40+ scripts)
+### 🎨 Stylus - Bibliothèque de Styles (100+ scripts)
 
 Styles CSS pour Gmail via Stylus (ancien et nouveau design)
 

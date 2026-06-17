@@ -4,7 +4,17 @@
 
 [🇬🇧 EN](README_en.md) · [🇫🇷 FR](README.md)
 
-✨ Complete bidirectional synchronization solution for userscripts between VS Code and ScriptCat, with a collection of ready-to-use snippets.
+✨ Complete bidirectional synchronization solution for userscripts between VS Code and ScriptCat, with an optimized collection of personal snippets.
+
+## 🍴 Why this fork?
+
+This project is a fork of [ScriptCat](https://github.com/scriptcat/scriptcat) born from the need for a deeper and more personalized integration between the code editor and the browser.
+
+The main motivations for this fork are:
+- 🚀 **Code-First Workflow**: Use VS Code as the single source of truth for script development.
+- 🔄 **Real Bidirectional Sync**: Unlike standard solutions, every change (creation, renaming, deletion) is instantly reflected in both directions via WebSocket.
+- 📦 **"Own" Snippets Collection**: Inclusion of a library of personal scripts (`pk-` for "Personal/PK scripts") developed over the years to optimize Gmail, ChatGPT, GitHub, etc.
+- 🎨 **Stylus to Userscripts Conversion**: A system to transform Stylus CSS styles into standalone userscripts, allowing them to be versioned and synchronized like code.
 
 ## ✅ Features
 
@@ -16,77 +26,55 @@
 - ⚙️ **Flexible configuration** : customizable port and auto-connect
 - 📦 **50+ included snippets** : optimized userscripts for Gmail, GitHub, GG.deals, etc.
 
-## 📚 Snippets Collection
+## 📚 Personal Snippets Collection
 
-### 🤖 ChatGPT (5 scripts)
+All scripts starting with `pk-` are original creations or heavy adaptations. `stylus-` scripts are CSS style ports.
 
-| Script | Description |
-|--------|-------------|
-| `pk-chatgpt-multi-pin-answers` | Pin multiple answers per ChatGPT conversation with side panel |
-| `pk-chatgpt-sidebar-pin` | Pin conversations in ChatGPT sidebar, pinCHAT style |
-| `pk-chatgpt-read-aloud` | Voice reading of ChatGPT responses |
-| `pk-read-aloud-chatgpt` | 🗣️🔄⏹️ buttons to read prose elements aloud |
-| Versions v2-v5 | Progressive variants (navigation, grouping, sources) |
+### 🏷️ Conventions
+- **pk-***: Feature scripts (Javascript)
+- **pk-css-***: Purely graphical enhancements (CSS Injection)
+- **stylus-***: Complete themes ported from Stylus
 
-### 📧 Gmail - Core Scripts (8 scripts)
+### 🤖 ChatGPT (PK Proprietary)
 
-| Script | Description |
-|--------|-------------|
-| `pk-gmail-custom-tabs` | Add 3 custom tabs to filter emails by labels |
-| `pk-gmail-filter-similar-always-visible` | Persistent icon button for "Filter similar messages" |
-| `pk-gmail-icon-view` | Finder-style icon view for Gmail |
-| `pk-gmail-bouton-inbox-vue-liste-strict` | Show "New message" only in inbox list view |
-| `pk-gmail-new-message-button` | "New message" button next to Gmail logo |
-| `pk-gmail-no-spam-icon` | Validation icon when no spam |
-| `pk-gmail-sender-icons` | Display sender favicons in Gmail |
-| `pk-gmail-a-filtrer-les-messages-similaires` | Add "Filter similar" button to toolbar |
+| Script | Detailed Description |
+|--------|----------------------|
+| `pk-chatgpt-multi-pin-answers` | **Flagship script**: Allows pinning multiple answers within a discussion. Creates a floating index to quickly navigate between key points of a long conversation. |
+| `pk-chatgpt-sidebar-pin` | Adds a "Bookmarks" feature to the ChatGPT sidebar to never lose important discussions. |
+| `pk-chatgpt-read-aloud` | Integrates text-to-speech to listen to responses without leaving the tab. |
 
-### 🎨 Gmail - CSS/Styling (20 scripts)
+### 📧 Gmail - The Ultimate Experience
 
-| Script | Description |
-|--------|-------------|
-| `pk-css-gmail-white-style` | Pure white Gmail interface |
-| `pk-css-gmail-full-white` | Full white mode Gmail |
-| `pk-css-gmail-margin` | Gmail margin adjustments |
-| `pk-css-gmail-no-left-menu` | Hide Gmail left menu |
-| `pk-css-gmail-scrollbar-grey` | Elegant grey scrollbar Gmail |
-| `pk-css-gmail-search-bar-center-white` | Centered white search bar |
-| `pk-css-gmail-stars-focus` | Highlight Gmail stars |
-| `pk-css-gmail-sticky-topic` | Sticky subject in Gmail |
-| `pk-css-gmail-top-right-buttons` | Top right buttons Gmail |
-| `pk-css-gmail-unread-color` | Custom color for unread emails |
-| Versions `pk-css-pk-gmail-*` | Auto-generated CSS injectors for above styles |
+| Script | Detailed Description |
+|--------|----------------------|
+| `pk-gmail-custom-tabs` | Custom tab system (e.g., "To Process", "Urgent") injected directly into the interface for fast sorting. |
+| `pk-gmail-keyword-highlighter` | **Analysis Tool**: Dynamically highlights keywords (project names, amounts, dates) for quick email reading. |
+| `pk-gmail-icon-view` | Transforms the email list into an icon grid, ideal for quickly visualizing senders. |
+| `pk-gmail-sender-icons` | Fetches and displays favicons/avatars for each service (Amazon, GitHub, etc.) next to each email. |
 
-### 🐙 GitHub (2 scripts)
+### 🐙 GitHub & Development
 
-| Script | Description |
-|--------|-------------|
-| `pk-github-license-stickers` | Highlight GitHub licenses as colorful stickers |
-| `pk-github-license-stickers-alt` | Alternative version of license stickers |
+| Script | Detailed Description |
+|--------|----------------------|
+| `pk-github-license-stickers` | Visually displays the project license (MIT, GPL, etc.) in the repo header with distinctive colors. |
+| `stylus-github-repositories-grid` | Transforms the repository list into a modern, compact grid. |
 
-### 🎮 GG.deals (3 scripts)
+### 🎮 Gaming & Shopping
 
-| Script | Description |
-|--------|-------------|
-| `pk-ggdeals-grid-view` | Display GG.deals new deals in grid layout |
-| `pk-gg-deals-new-deals-grid-view-corrected` | Corrected version of GG.deals grid |
-| `pk-css-ggdeals-colors` | Improve GG.deals icon and background colors |
+| Script | Detailed Description |
+|--------|----------------------|
+| `pk-ggdeals-grid-view` | Forces a grid view on GG.deals to see more deals at a glance. |
+| `pk-css-ggdeals-colors` | Overhaul of contrasts and colors for better price readability. |
+| `stylus-store-steampowered-com-*` | Specific visual improvements for Steam pages. |
 
-### 💼 LinkedIn (1 script)
+### 🛠️ System Utilities
 
-| Script | Description |
-|--------|-------------|
-| `pk-css-linkedin-width` | Adjust LinkedIn width and hide sidebar |
+| Script | Detailed Description |
+|--------|----------------------|
+| `pk-unsuspend-url-*` | Suite of tools to instantly recover URLs "suspended" by extensions like The Great Suspender. |
+| `pk-css-main` | The "Master CSS" that gathers global micro-adjustments across the web. |
 
-### 🛠️ Utilities (5 scripts)
-
-| Script | Description |
-|--------|-------------|
-| `pk-unsuspend-url-from-clipboard` | Decode suspended URLs from clipboard |
-| `pk-unsuspend-url-the-great-suspender-similar` | Extract and open real URLs from suspended.html |
-| `pk-utils-unsuspend-current-page` | Current page version of unsuspender |
-| `pk-utils-unsuspend-from-clipboard` | Clipboard version of unsuspender |
-| `pk-css-main` | Main auto-generated CSS injector |
+### 🎨 Stylus - Styles Library (100+ scripts)
 
 ## 🧠 Usage
 
