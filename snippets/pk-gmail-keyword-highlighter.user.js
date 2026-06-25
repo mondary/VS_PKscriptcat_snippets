@@ -1,1 +1,1354 @@
-// ==UserScript==\n// @name         PK Gmail Keyword Highlighter\n// @namespace    https://github.com/mondary\n// @version      0.4.0\n// @description  Highlight keywords with colors and strike-through excluded terms, per site.\n// @match        *://*/*\n// @run-at       document-start\n// @grant        none\n// ==/UserScript==\n\n/*\nUsage:\n- Install with a userscript manager (Tampermonkey/Violentmonkey).\n- Click the \"HL\" button to open the panel.\n- Enter comma-separated keywords to highlight and exclude, then Save.\n- Settings persist per hostname via localStorage.\n*/\n\n(() => {\n  \"use strict\";\n\n  const STORAGE_PREFIX = \"pkh:keyword-highlighter:\";\n  const APPLY_DEBOUNCE_MS = 250;\n  const overlayId = \"pkh-overlay\";\n  const toggleId = \"pkh-toggle\";\n  const tokenClass = \"pkh-token\";\n\n  let ©;T&ùapplyTimer = null;\n  let isApplying = false;\n  let dragState = null;\n\n  function storageKey() {\n    return STORAGE_PREFIX + window.location.hostname;\n  }\n\n  function loadConfig() {\n    const raw = window.localStorage.getItem(storageKey());\n    if (!raw) {\n      return { highlight: [], exclude: [], style: \"sticker\" };\n    }\n    try {\n      const parsed = JSON.parse(raw);\n      const style =\n        parsed.style === \"sticker-v1\"\n          ? \"origami\"\n          : parsed.style === \"normal\"\n            ? \"offset\"\n            : parsed.style;\n      return {\n        highlight: Array.isArray(parsed.highlight) ? parsed.highlight : [],\n        exclude: Array.isArray(parsed.exclude) ? parsed.exclude : [],\n        style: typeof style === \"string\" ? style : \"sticker\",\n      };\n    } catch {\n      return { highlight: [], exclude: [], style: \"sticker\" };\n    }\n  }\n\n  function saveConfig(config) {\n    window.localStorage.setItem(storageKey(), JSON.stringify(config));\n  }\n\n  const DOMAINS_KEY = \"pkh:enabled-domains\";\n\n  function loadEnabledDomains() {\n    const raw = window.localStorage.getItem(DOMAINS_KEY);\n    if (!raw) return [];\n    try {\n      const parsed = JSON.parse(raw);\n      return Array.isArray(parsed) ? parsed : [];\n    } catch {\n      return [];\n    }\n  }\n\n  function saveEnabledDomains(domains) {\n    window.localStorage.setItem(DOMAINS_KEY, JSON.stringify(domains));\n  }\n\n  function isDomainEnabled() {\n    const domains = loadEnabledDomains();\n    return domains.includes(window.location.hostname);\n  }\n\n  function addCurrentDomain() {\n    const domains = loadEnabledDomains();\n    const hostname = window.location.hostname;\n    if (!domains.includes(hostname)) {\n      domains.push(hostname);\n      saveEnabledDomains(domains);\n    }\n    return domains;\n  }\n\n  function removeDomain(domain) {\n    const domains = loadEnabledDomains();\n    const filtered = domains.filter((d) => d !== domain);\n    saveEnabledDomains(filtered);\n    return filtered;\n  }\n\n  function normalizeList(value) {\n    return value\n      .split(\",\")\n      .map((item) => item.trim())\n      .filter((item) => item.length > 0);\n  }\n\n  function escapeRegExp(value) {\n    return value.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n  }\n\n  function hashString(value) {\n    let hash = 0;\n    for (let i = 0; i \u003C value.length; i += 1) {\n      hash = (hash \u003C\u003C 5) - hash + value.charCodeAt(i);\n      hash |= 0;\n    }\n    return Math.abs(hash);\n  }\n\n  function highlightColorFor(word) {\n    const hash = hashString(word.toLowerCase());\n    const hue = hash % 360;\n    return `hsl(${hue} 100% 55%)`;\n  }\n\n  function highlightTiltFor(word) {\n    const hash = hashString(word.toLowerCase());\n    const step = (hash % 5) - 2;\n    return `${step * 0.6}deg`;\n  }\n\n  function textColorFor(bg) {\n    const m = /hsl\\((\\d+)\\s+(\\d+)%\\s+(\\d+)%\\)/.exec(bg);\n    if (!m) return \"#1a1a1a\";\n    const lightness = Number(m[3]);\n    return lightness > 65 ? \"#1a1a1a\" : \"#ffffff\";\n  }\n\n  function normalizeToken(value) {\n    return value\n      .toLowerCase()\n      .replace(/[\\s\\u00A0\\u202F\\u2009\\u2007]+/g, \" \")\n      .trim();\n  }\n\n  function buildTokenMap(config) {\n    const highlight = new Map();\n    const exclude = new Set();\n    config.exclude.forEach((word) => {\n      const normalized = normalizeToken(word);\n      if (normalized) exclude.add(normalized);\n    });\n    config.highlight.forEach((word) => {\n      const normalized = normalizeToken(word);\n      if (!normalized || exclude.has(normalized)) return;\n      highlight.set(normalized, word);\n    });\n    return { highlight, exclude };\n  }\n\n  function tokenToPattern(token) {\n    const parts = token.split(\" \").map((part) => escapeRegExp(part));\n    return parts.join(\"[\\\\s\\\\u00A0\\\\u202F\\\\u2009\\\\u2007]+\");\n  }\n\n  function withBoundaries(pattern, token) {\n    const startsWord = /\\w/.test(token[0] || \"\");\n    const endsWord = /\\w/.test(token[token.length - 1] || \"\");\n    let result = pattern;\n    if (startsWord) result = `\\\\b${result}`;\n    if (endsWord) result = `${result}\\\\b`;\n    return result;\n  }\n\n  function buildRegexFromList(list) {\n    const all = list.map((word) => normalizeToken(word)).filter(Boolean);\n\n    if (all.length === 0) return null;\n    const unique = Array.from(new Set(all));\n    unique.sort((a, b) => b.length - a.length);\n    const pattern = unique\n      .map((word) => withBoundaries(tokenToPattern(word), word))\n      .join(\"|\");\n    if (!pattern) return null;\n    return new RegExp(pattern, \"gi\");\n  }\n\n  function shouldSkipElement(el) {\n    if (!el) return true;\n    if (el.id === overlayId || el.id === toggleId) return true;\n    if (el.closest && el.closest(`#${overlayId}, #${toggleId}`)) return true;\n    if (el.closest && el.closest(`.${tokenClass}`)) return true;\n    const tag = el.tagName;\n    if (!tag) return false;\n    if (tag === \"SCRIPT\" || tag === \"STYLE\" || tag === \"NOSCRIPT\") return true;\n    if (tag === \"TEXTAREA\" || tag === \"INPUT\" || tag === \"SELECT\") return true;\n    if (el.isContentEditable) return true;\n    return false;\n  }\n\n  function clearHighlights() {\n    const tokens = document.querySelectorAll(`span.${tokenClass}`);\n    tokens.forEach((span) => {\n      const text = document.createTextNode(span.textContent || \"\");\n      span.replaceWith(text);\n    });\n  }\n\n  function collectTextNodes(skipExclude) {\n    const walker = document.createTreeWalker(\n      document.body,\n      NodeFilter.SHOW_TEXT,\n      {\n        acceptNode(node) {\n          if (!node.parentElement) return NodeFilter.FILTER_REJECT;\n          if (shouldSkipElement(node.parentElement)) {\n            return NodeFilter.FILTER_REJECT;\n          }\n          if (\n            skipExclude &&\n            node.parentElement.closest &&\n            node.parentElement.closest('[data-pkh-exclude=\"1\"]')\n          ) {\n            return NodeFilter.FILTER_REJECT;\n          }\n          if (!node.nodeValue || !node.nodeValue.trim()) {\n            return NodeFilter.FILTER_REJECT;\n          }\n          return NodeFilter.FILTER_ACCEPT;\n        },\n      }\n    );\n\n    const textNodes = [];\n    let current = walker.nextNode();\n    while (current) {\n      textNodes.push(current);\n      current = walker.nextNode();\n    }\n\n    return textNodes;\n  }\n\n  function applyMatches(textNodes, regex, mode, tokenMap, config) {\n    textNodes.forEach((node) => {\n      const text = node.nodeValue;\n      regex.lastIndex = 0;\n\n      let match = regex.exec(text);\n      if (!match) return;\n\n      const frag = document.createDocumentFragment();\n      let lastIndex = 0;\n\n      while (match) {\n        const matchText = match[0];\n        const matchIndex = match.index;\n\n        if (matchIndex > lastIndex) {\n          frag.appendChild(\n            document.createTextNode(text.slice(lastIndex, matchIndex))\n          );\n        }\n\n        const span = document.createElement(\"span\");\n        span.className = tokenClass;\n        span.textContent = matchText;\n\n        if (mode === \"exclude\") {\n          span.dataset.pkhExclude = \"1\";\n          span.style.textDecorationLine = \"line-through\";\n          span.style.textDecorationStyle = \"wavy\";\n          span.style.textDecorationThickness = \"2px\";\n          span.style.textDecorationColor = \"#b44\";\n          span.style.background = \"transparent\";\n        } else {\n          const normalized = normalizeToken(matchText);\n          if (!tokenMap.highlight.has(normalized)) {\n            frag.appendChild(document.createTextNode(matchText));\n            lastIndex = matchIndex + matchText.length;\n            match = regex.exec(text);\n            continue;\n          }\n\n          const original = tokenMap.highlight.get(normalized) || matchText;\n          const bg = highlightColorFor(original);\n          const tilt = highlightTiltFor(original);\n          span.style.background = bg;\n          span.style.color = textColorFor(bg);\n          span.style.borderRadius = \"4px\";\n          const styleMode = config.style || \"sticker\";\n          span.style.padding = \"0 3px\";\n          span.style.display = \"inline-block\";\n          span.style.transform = `rotate(${tilt})`;\n          span.style.fontWeight = \"700\";\n\n          if (styleMode === \"normal\" || styleMode === \"offset\") {\n            span.style.borderRadius = \"4px\";\n            span.style.padding = \"0 2px\";\n            span.style.textShadow = \"none\";\n            span.style.background = \"transparent\";\n            span.style.color = \"#1a1a1a\";\n            span.style.boxShadow = `3px 3px 0 0 ${bg}`;\n          } else if (styleMode === \"bold\") {\n            span.style.borderRadius = \"4px\";\n            span.style.boxShadow = \"0 0 0 2px rgba(0, 0, 0, 0.25)\";\n            span.style.fontWeight = \"700\";\n            span.style.textShadow = \"0 1px 0 rgba(0, 0, 0, 0.35)\";\n          } else if (styleMode === \"origami\") {\n            span.classList.add(\"pkh-sticker-v1\");\n            span.style.padding = \"0.15rem 0.45rem\";\n            span.style.borderRadius = \"9999px\";\n            span.style.fontWeight = \"700\";\n            span.style.textShadow = \"none\";\n          } else if (styleMode === \"candy\") {\n            span.classList.add(\"pkh-candy\");\n            span.dataset.stroke = matchText;\n            span.style.background = \"transparent\";\n            span.style.color = \"#111111\";\n            span.style.padding = \"0\";\n            span.style.fontWeight = \"400\";\n            span.style.textShadow = \"none\";\n          } else if (styleMode === \"pastel\") {\n            span.style.borderRadius = \"8px\";\n            span.style.padding = \"0.12rem 0.5rem\";\n            span.style.fontWeight = \"700\";\n            span.style.textShadow = \"none\";\n            span.style.boxShadow = \"0 2px 0 rgba(0, 0, 0, 0.12)\";\n            span.style.backgroundImage =\n              \"linear-gradient(120deg, rgba(255, 224, 178, 0.9), rgba(255, 204, 230, 0.9))\";\n            span.style.border = \"1px solid rgba(0, 0, 0, 0.08)\";\n          } else if (styleMode === \"neon\") {\n            span.style.borderRadius = \"10px\";\n            span.style.padding = \"0.12rem 0.55rem\";\n            span.style.fontWeight = \"800\";\n            span.style.color = \"#24001b\";\n            span.style.textShadow =\n              \"0 1px 0 rgba(255, 255, 255, 0.3), 0 0 8px rgba(255, 45, 154, 0.65)\";\n            span.style.boxShadow =\n              \"0 0 0 2px rgba(255, 45, 154, 0.7), 0 0 12px rgba(0, 245, 255, 0.55)\";\n            span.style.background =\n              \"linear-gradient(90deg, rgba(255, 45, 154, 0.85), rgba(0, 245, 255, 0.85))\";\n          } else {\n            span.style.borderRadius = \"10px\";\n            span.style.padding = \"1px 5px\";\n            span.style.boxShadow =\n              \"0 0 0 4px #ffffff, 4px 4px 0 rgba(0, 0, 0, 0.25)\";\n            span.style.border = \"none\";\n            span.style.fontWeight = \"700\";\n            span.style.textShadow = \"0 1px 0 rgba(0, 0, 0, 0.35)\";\n            span.style.backgroundImage =\n              \"linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(0, 0, 0, 0.1))\";\n            span.style.transform = \"rotate(-2deg)\";\n          }\n        }\n\n        frag.appendChild(span);\n        lastIndex = matchIndex + matchText.length;\n        match = regex.exec(text);\n      }\n\n      if (lastIndex \u003C text.length) {\n        frag.appendChild(document.createTextNode(text.slice(lastIndex)));\n      }\n\n      node.parentNode.replaceChild(frag, node);\n    });\n  }\n\n  function applyHighlights() {\n    if (isApplying) return;\n    if (!isDomainEnabled()) {\n      clearHighlights();\n      return;\n    }\n    isApplying = true;\n\n    try {\n      const config = loadConfig();\n      const tokenMap = buildTokenMap(config);\n      const excludeRegex = buildRegexFromList(config.exclude);\n      const highlightRegex = buildRegexFromList(Array.from(tokenMap.highlight.keys()));\n\n      clearHighlights();\n\n      if (!excludeRegex && !highlightRegex) return;\n\n      if (excludeRegex) {\n        const excludeNodes = collectTextNodes(false);\n        applyMatches(excludeNodes, excludeRegex, \"exclude\", tokenMap, config);\n      }\n\n      if (highlightRegex) {\n        const highlightNodes = collectTextNodes(true);\n        applyMatches(\n          highlightNodes,\n          highlightRegex,\n          \"highlight\",\n          tokenMap,\n          config\n        );\n      }\n    } finally {\n      isApplying = false;\n    }\n  }\n\n  function scheduleApply() {\n    if (applyTimer) window.clearTimeout(applyTimer);\n    applyTimer = window.setTimeout(applyHighlights, APPLY_DEBOUNCE_MS);\n  }\n\n  function createStyles() {\n    const style = document.createElement(\"style\");\n    style.textContent = `\n      @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');\n      @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css');\n\n      #${toggleId} {\n        position: fixed;\n        right: 16px;\n        bottom: 16px;\n        z-index: 2147483647;\n        width: 36px;\n        height: 36px;\n        border-radius: 18px;\n        border: none;\n        background: #1a1a1a;\n        color: #fff;\n        font: 600 12px/36px ui-sans-serif, system-ui, -apple-system, sans-serif;\n        text-align: center;\n        cursor: pointer;\n        touch-action: none;\n        user-select: none;\n        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n      }\n\n      #${overlayId} {\n        position: fixed;\n        right: 16px;\n        bottom: 64px;\n        z-index: 2147483647;\n        width: 280px;\n        background: #ffffff;\n        color: #111;\n        border-radius: 10px;\n        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);\n        padding: 12px;\n        font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;\n        display: none;\n        touch-action: none;\n      }\n\n      #${overlayId}.pkh-open {\n        display: block;\n      }\n\n      #${overlayId} label {\n        display: block;\n        font-weight: 600;\n        margin-bottom: 4px;\n      }\n\n      #${overlayId} input {\n        width: 100%;\n        box-sizing: border-box;\n        border: 1px solid #ccc;\n        border-radius: 6px;\n        padding: 6px 8px;\n        margin-bottom: 8px;\n        font-size: 12px;\n      }\n\n      #${overlayId} textarea {\n        width: 100%;\n        box-sizing: border-box;\n        border: 1px solid #ccc;\n        border-radius: 6px;\n        padding: 6px 8px;\n        margin-bottom: 8px;\n        font-size: 12px;\n        font-family: inherit;\n        resize: vertical;\n        min-height: 48px;\n      }\n\n      #${overlayId} .pkh-domain-section {\n        margin-bottom: 12px;\n        padding-bottom: 12px;\n        border-bottom: 1px solid #eee;\n      }\n      #${overlayId} .pkh-close {\n        position: absolute;\n        top: 4px;\n        right: 6px;\n        border: none;\n        background: transparent;\n        color: #777;\n        font-size: 18px;\n        line-height: 1;\n        cursor: pointer;\n        padding: 4px 6px;\n      }\n      #${overlayId} .pkh-close:hover {\n        color: #111;\n      }\n\n      #${overlayId} .pkh-domain-list {\n        max-height: 100px;\n        overflow-y: auto;\n        margin-bottom: 8px;\n        border: 1px solid #eee;\n        border-radius: 6px;\n      }\n\n      #${overlayId} .pkh-domain-item {\n        display: flex;\n        align-items: center;\n        padding: 6px 8px;\n        font-size: 11px;\n        border-bottom: 1px solid #f5f5f5;\n      }\n\n      #${overlayId} .pkh-domain-item:last-child {\n        border-bottom: none;\n      }\n\n      #${overlayId} .pkh-domain-item.is-current {\n        background: #f0f7ff;\n      }\n\n      #${overlayId} .pkh-domain-name {\n        flex: 1;\n        overflow: hidden;\n        text-overflow: ellipsis;\n        white-space: nowrap;\n      }\n\n      #${overlayId} .pkh-domain-current {\n        font-size: 9px;\n        color: #666;\n        margin-left: 4px;\n      }\n\n      #${overlayId} .pkh-domain-remove {\n        background: none;\n        border: none;\n        color: #999;\n        cursor: pointer;\n        padding: 2px 6px;\n        font-size: 14px;\n        line-height: 1;\n        flex: none;\n      }\n\n      #${overlayId} .pkh-domain-remove:hover {\n        color: #c00;\n      }\n\n      #${overlayId} .pkh-add-domain {\n        width: 100%;\n        background: #f5f5f5;\n        border: 1px dashed #ccc;\n        border-radius: 6px;\n        padding: 8px;\n        cursor: pointer;\n        font-size: 11px;\n        color: #666;\n      }\n\n      #${overlayId} .pkh-add-domain:hover {\n        background: #eee;\n        border-color: #999;\n      }\n\n      #${overlayId} .pkh-empty-domains {\n        padding: 12px;\n        text-align: center;\n        color: #999;\n        font-size: 11px;\n      }\n\n      #${overlayId} select {\n        width: 100%;\n        box-sizing: border-box;\n        border: 1px solid #ccc;\n        border-radius: 6px;\n        padding: 6px 8px;\n        margin-bottom: 8px;\n        font-size: 12px;\n        background: #fff;\n      }\n\n      #${overlayId} .pkh-style-grid {\n        display: grid;\n        grid-template-columns: repeat(2, minmax(0, 1fr));\n        gap: 6px;\n        margin-bottom: 8px;\n      }\n\n      #${overlayId} .pkh-style-item {\n        border: 1px solid rgba(0, 0, 0, 0.12);\n        border-radius: 8px;\n        padding: 6px;\n        background: #fff;\n        cursor: pointer;\n        display: grid;\n        place-items: center;\n        min-height: 34px;\n        transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;\n      }\n\n      #${overlayId} .pkh-style-item.is-active {\n        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);\n        transform: translateY(-1px);\n      }\n\n      #${overlayId} .pkh-style-preview {\n        font-size: 12px;\n        font-weight: 700;\n        line-height: 1.2;\n        display: inline-block;\n      }\n\n      #${overlayId} .pkh-preview-normal {\n        background: #ffe16a;\n        color: #1a1a1a;\n        border-radius: 4px;\n        padding: 0 2px;\n      }\n\n      #${overlayId} .pkh-preview-offset {\n        color: #1a1a1a;\n        border-radius: 4px;\n        padding: 0 2px;\n        box-shadow: 3px 3px 0 0 #ffe16a;\n      }\n\n      #${overlayId} .pkh-preview-bold {\n        background: #ffd35c;\n        color: #1a1a1a;\n        border-radius: 4px;\n        padding: 0 2px;\n        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);\n      }\n\n      #${overlayId} .pkh-preview-origami {\n        border-radius: 9999px;\n        padding: 0.1rem 0.45rem;\n        background: #ffd35c;\n        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);\n        position: relative;\n      }\n\n      #${overlayId} .pkh-preview-origami::after {\n        content: \"\";\n        position: absolute;\n        width: 10px;\n        height: 10px;\n        top: -2px;\n        right: -2px;\n        border-radius: 9999px;\n        background: rgba(255, 255, 255, 0.6);\n        border: 1px solid #fff;\n      }\n\n      #${overlayId} .pkh-preview-candy {\n        font-family: \"Fredoka One\", cursive;\n        color: #111;\n        text-shadow: 0 0 0 #fff;\n      }\n\n      #${overlayId} .pkh-preview-sticker {\n        border-radius: 10px;\n        padding: 0 4px;\n        background: linear-gradient(135deg, rgba(65, 136, 241, 0.95), rgba(22, 84, 170, 0.9));\n        box-shadow: 0 0 0 4px #ffffff, 4px 4px 0 rgba(0, 0, 0, 0.25);\n        transform: rotate(-2deg);\n      }\n\n      #${overlayId} .pkh-preview-pastel {\n        border-radius: 8px;\n        padding: 0.1rem 0.45rem;\n        background: linear-gradient(120deg, rgba(255, 224, 178, 0.9), rgba(255, 204, 230, 0.9));\n        box-shadow: 0 2px 0 rgba(0, 0, 0, 0.12);\n        border: 1px solid rgba(0, 0, 0, 0.08);\n      }\n\n      #${overlayId} .pkh-preview-neon {\n        border-radius: 10px;\n        padding: 0.1rem 0.5rem;\n        color: #24001b;\n        background: linear-gradient(90deg, rgba(255, 45, 154, 0.85), rgba(0, 245, 255, 0.85));\n        box-shadow: 0 0 0 2px rgba(255, 45, 154, 0.7), 0 0 12px rgba(0, 245, 255, 0.55);\n        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);\n      }\n\n      #${overlayId} .pkh-actions {\n        display: flex;\n        gap: 6px;\n      }\n\n      #${overlayId} button {\n        flex: 1;\n        border: none;\n        border-radius: 6px;\n        padding: 6px;\n        cursor: pointer;\n        background: #1a1a1a;\n        color: #fff;\n        font-weight: 600;\n      }\n\n      #${overlayId} button.pkh-secondary {\n        background: #efefef;\n        color: #222;\n      }\n\n      /* Sticker v1.0.1 - https://github.com/yepteam/sticker-button (MIT) */\n      .pkh-sticker-v1 {\n        vertical-align: middle;\n        box-sizing: border-box;\n        border-radius: 9999px;\n        white-space: nowrap;\n        position: relative;\n        transition: clip-path 0.3s ease-out;\n        box-shadow: none !important;\n        border-width: 1px;\n        font-size: 1rem;\n        padding-top: 0.375rem;\n        padding-bottom: 0.375rem;\n        line-height: 1.5;\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% + 0.1837068893rem) 100%,\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% + 0.1837068893rem) 100%,\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1::after {\n        content: \"\";\n        position: absolute;\n        display: block;\n        height: 2.375rem;\n        width: 2.375rem;\n        top: -1px;\n        right: -1px;\n        transform: rotate(-30deg) translateX(1.1875rem);\n        border-radius: 9999px;\n        background-color: rgba(255, 255, 255, 0.5);\n        border: 1px solid #fff;\n        transition: transform 0.3s ease-out;\n      }\n\n      .pkh-sticker-v1:not(.pkh-sticker-corner-static):hover {\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 0.6732974165rem) -0.296875rem,\n          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 0.6732974165rem) -0.296875rem,\n          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1:not(.pkh-sticker-corner-static):hover::after {\n        transform: rotate(-30deg) translateX(2.375rem);\n      }\n\n      .pkh-sticker-v1.pkh-sticker-corner-hover {\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 0.6732974165rem) -0.296875rem,\n          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 0.6732974165rem) -0.296875rem,\n          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1.pkh-sticker-corner-hover::after {\n        transform: rotate(-30deg) translateX(2.375rem);\n      }\n\n      .pkh-sticker-v1.pkh-sticker-corner-hover:hover {\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% + 0.1837068893rem) 100%,\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% + 0.1837068893rem) 100%,\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1.pkh-sticker-corner-hover:hover::after {\n        transform: rotate(-30deg) translateX(1.1875rem);\n      }\n\n      .pkh-sticker-v1[data-bs-toggle=\"button\"] {\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 0.6732974165rem) -0.296875rem,\n          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 0.6732974165rem) -0.296875rem,\n          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1[data-bs-toggle=\"button\"]::after {\n        transform: rotate(-30deg) translateX(2.375rem);\n      }\n\n      .pkh-sticker-v1[data-bs-toggle=\"button\"].active {\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% + 0.1837068893rem) 100%,\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% - 1.1875rem) 0,\n          calc(100% + 0.1837068893rem) 100%,\n          calc(100% + 0.1837068893rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1[data-bs-toggle=\"button\"].active::after {\n        transform: rotate(-30deg) translateX(1.1875rem);\n      }\n\n      .pkh-sticker-shadow {\n        filter: drop-shadow(0 1rem 0.5rem rgba(0, 0, 0, 0.25));\n      }\n\n      .pkh-sticker-v1.pkh-sticker-lg {\n        border-width: 1px;\n        font-size: 1.25rem;\n        padding-top: 0.5rem;\n        padding-bottom: 0.5rem;\n        line-height: 1.5;\n        -webkit-clip-path: polygon(\n          0 0,\n          calc(100% - 1.5rem) 0,\n          calc(100% - 1.5rem) 0,\n          calc(100% + 0.2320508076rem) 100%,\n          calc(100% + 0.2320508076rem) 100%,\n          0 100%\n        );\n        clip-path: polygon(\n          0 0,\n          calc(100% - 1.5rem) 0,\n          calc(100% - 1.5rem) 0,\n          calc(100% + 0.2320508076rem) 100%,\n          calc(100% + 0.2320508076rem) 100%,\n          0 100%\n        );\n      }\n\n      .pkh-sticker-v1.pkh-sticker-lg::after {\n        height: 3rem;\n        width: 3rem;\n        top: -1px;\n        right: -1px;\n        transform: rotate(-30deg) translateX(1.5rem);\n      }\n\n      .pkh-candy {\n        position: relative;\n        font-family: \"Fredoka One\", cursive;\n        font-size: 18px;\n        filter: drop-shadow(0 0 5px #777);\n      }\n\n      .pkh-candy::before,\n      .pkh-candy::after {\n        content: attr(data-stroke);\n        position: absolute;\n        top: 0;\n        left: 0;\n        z-index: -1;\n        -webkit-text-stroke: 9px #ffffff;\n        text-shadow: none;\n      }\n\n      .pkh-candy::after {\n        z-index: 0;\n        -webkit-text-stroke: 0 transparent;\n      }\n    `;\n    (document.head || document.documentElement).appendChild(style);\n  }\n\n  function createOverlay() {\n    const toggle = document.createElement(\"button\");\n    toggle.id = toggleId;\n    toggle.type = \"button\";\n    toggle.setAttribute(\"aria-label\", \"Keyword Highlighter\");\n    toggle.title = \"Keyword Highlighter\";\n    const icon = document.createElement(\"i\");\n    icon.className = \"fa-solid fa-highlighter\";\n    toggle.appendChild(icon);\n\n    const overlay = document.createElement(\"div\");\n    overlay.id = overlayId;\n\n    // Domain section\n    const domainSection = document.createElement(\"div\");\n    domainSection.className = \"pkh-domain-section\";\n\n    const domainLabel = document.createElement(\"label\");\n    domainLabel.textContent = \"Sites actifs\";\n\n    const domainList = document.createElement(\"div\");\n    domainList.className = \"pkh-domain-list\";\n    domainList.id = \"pkh-domain-list\";\n\n    const addDomainBtn = document.createElement(\"button\");\n    addDomainBtn.type = \"button\";\n    addDomainBtn.className = \"pkh-add-domain\";\n    addDomainBtn.id = \"pkh-add-domain\";\n\n    function renderDomainList() {\n      const domains = loadEnabledDomains();\n      const currentHost = window.location.hostname;\n      const isCurrentEnabled = domains.includes(currentHost);\n\n      while (domainList.firstChild) {\n        domainList.removeChild(domainList.firstChild);\n      }\n\n      if (domains.length === 0) {\n        const empty = document.createElement(\"div\");\n        empty.className = \"pkh-empty-domains\";\n        empty.textContent = \"Aucun site actif\";\n        domainList.appendChild(empty);\n      } else {\n        domains.forEach((domain) => {\n          const item = document.createElement(\"div\");\n          item.className = \"pkh-domain-item\";\n          if (domain === currentHost) {\n            item.classList.add(\"is-current\");\n          }\n\n          const name = document.createElement(\"span\");\n          name.className = \"pkh-domain-name\";\n          name.textContent = domain;\n\n          if (domain === currentHost) {\n            const currentBadge = document.createElement(\"span\");\n            currentBadge.className = \"pkh-domain-current\";\n            currentBadge.textContent = \"(actuel)\";\n            name.appendChild(currentBadge);\n          }\n\n          const removeBtn = document.createElement(\"button\");\n          removeBtn.type = \"button\";\n          removeBtn.className = \"pkh-domain-remove\";\n          removeBtn.textContent = \"Ã\";\n          removeBtn.addEventListener(\"click\", () => {\n            removeDomain(domain);\n            renderDomainList();\n            scheduleApply();\n          });\n\n          item.appendChild(name);\n          item.appendChild(removeBtn);\n          domainList.appendChild(item);\n        });\n      }\n\n      if (isCurrentEnabled) {\n        addDomainBtn.textContent = \"â Site actif\";\n        addDomainBtn.disabled = true;\n        addDomainBtn.style.opacity = \"0.5\";\n        addDomainBtn.style.cursor = \"default\";\n      } else {\n        addDomainBtn.textContent = \"+ Ajouter ce site\";\n        addDomainBtn.disabled = false;\n        addDomainBtn.style.opacity = \"1\";\n        addDomainBtn.style.cursor = \"pointer\";\n      }\n    }\n\n    addDomainBtn.addEventListener(\"click\", () => {\n      if (!addDomainBtn.disabled) {\n        addCurrentDomain();\n        renderDomainList();\n        scheduleApply();\n      }\n    });\n\n    domainSection.appendChild(domainLabel);\n    domainSection.appendChild(domainList);\n    domainSection.appendChild(addDomainBtn);\n\n    const highlightLabel = document.createElement(\"label\");\n    highlightLabel.setAttribute(\"for\", \"pkh-highlight\");\n    highlightLabel.textContent = \"Highlight\";\n\n    const highlightInput = document.createElement(\"textarea\");\n    highlightInput.id = \"pkh-highlight\";\n    highlightInput.placeholder = \"X-Design, Job, YouTube\";\n    highlightInput.rows = 2;\n\n    const excludeLabel = document.createElement(\"label\");\n    excludeLabel.setAttribute(\"for\", \"pkh-exclude\");\n    excludeLabel.textContent = \"Exclude\";\n\n    const excludeInput = document.createElement(\"textarea\");\n    excludeInput.id = \"pkh-exclude\";\n    excludeInput.placeholder = \"marketing\";\n    excludeInput.rows = 2;\n\n    const styleLabel = document.createElement(\"label\");\n    styleLabel.textContent = \"Style\";\n\n    const styleGrid = document.createElement(\"div\");\n    styleGrid.className = \"pkh-style-grid\";\n\n    const styles = [\n      { id: \"sticker\", label: \"Sticker\", previewClass: \"pkh-preview-sticker\" },\n      { id: \"candy\", label: \"Candy\", previewClass: \"pkh-preview-candy\" },\n      { id: \"offset\", label: \"Offset\", previewClass: \"pkh-preview-offset\" },\n      { id: \"bold\", label: \"À¦XH"Bold\", previewClass: \"pkh-preview-bold\" },\n      { id: \"origami\", label: \"Origami\", previewClass: \"pkh-preview-origami\" },\n      { id: \"pastel\", label: \"Pastel\", previewClass: \"pkh-preview-pastel\" },\n      { id: \"neon\", label: \"Synthwave\", previewClass: \"pkh-preview-neon\" },\n    ];\n\n    let currentStyle = \"sticker\";\n\n    function renderStyleGrid() {\n      while (styleGrid.firstChild) {\n        styleGrid.removeChild(styleGrid.firstChild);\n      }\n      styles.forEach((style) => {\n        const button = document.createElement(\"button\");\n        button.type = \"button\";\n        button.className = \"pkh-style-item\";\n        button.dataset.style = style.id;\n\n        if (style.id === currentStyle) {\n          button.classList.add(\"is-active\");\n        }\n\n        const preview = document.createElement(\"span\");\n        preview.className = `pkh-style-preview ${style.previewClass}`;\n        preview.textContent = style.label;\n        button.appendChild(preview);\n\n        button.addEventListener(\"click\", () => {\n          currentStyle = style.id;\n          renderStyleGrid();\n        });\n\n        styleGrid.appendChild(button);\n      });\n    }\n\n    const actions = document.createElement(\"div\");\n    actions.className = \"pkh-actions\";\n\n    const saveButton = document.createElement(\"button\");\n    saveButton.id = \"pkh-save\";\n    saveButton.type = \"button\";\n    saveButton.textContent = \"Save\";\n\n    const clearButton = document.createElement(\"button\");\n    clearButton.id = \"pkh-clear\";\n    clearButton.type = \"button\";\n    clearButton.className = \"pkh-secondary\";\n    clearButton.textContent = \"Clear\";\n\n    actions.appendChild(saveButton);\n    actions.appendChild(clearButton);\n\n    const closeButton = document.createElement(\"button\");\n    closeButton.type = \"button\";\n    closeButton.className = \"pkh-close\";\n    closeButton.setAttribute(\"aria-label\", \"Fermer\");\n    closeButton.textContent = \"Ã\";\n    closeButton.addEventListener(\"click\", () => {\n      overlay.classList.remove(\"pkh-open\");\n    });\n\n    overlay.appendChild(closeButton);\n    overlay.appendChild(domainSection);\n    overlay.appendChild(highlightLabel);\n    overlay.appendChild(highlightInput);\n    overlay.appendChild(excludeLabel);\n    overlay.appendChild(excludeInput);\n    overlay.appendChild(styleLabel);\n    overlay.appendChild(styleGrid);\n    overlay.appendChild(actions);\n\n    let lastDragMoved = false;\n\n    function setPosition(el, left, top) {\n      el.style.left = `${left}px`;\n      el.style.top = `${top}px`;\n      el.style.right = \"auto\";\n      el.style.bottom = \"auto\";\n    }\n\n    function positionOverlayNearToggle() {\n      const toggleRect = toggle.getBoundingClientRect();\n      const overlayRect = overlay.getBoundingClientRect();\n      const gap = 8;\n      const margin = 8;\n      const left = Math.min(\n        window.innerWidth - overlayRect.width - margin,\n        Math.max(margin, toggleRect.left)\n      );\n      const top = Math.max(\n        margin,\n        toggleRect.top - overlayRect.height - gap\n      );\n      setPosition(overlay, left, top);\n    }\n\n    function startDrag(event) {\n      if (event.type === \"mousedown\" && event.button !== 0) return;\n      if (\n        event.target !== toggle &&\n        event.target &&\n        event.target.closest &&\n        event.target.closest(\"input, select, button, textarea\")\n      ) {\n        return;\n      }\n\n      const toggleRect = toggle.getBoundingClientRect();\n      const overlayRect = overlay.getBoundingClientRect();\n      const hasOverlaySize = overlayRect.width > 0 && overlayRect.height > 0;\n      const offsetX = hasOverlaySize ? overlayRect.left - toggleRect.left : 0;\n      const offsetY = hasOverlaySize ? overlayRect.top - toggleRect.top : -48;\n\n      setPosition(toggle, toggleRect.left, toggleRect.top);\n      if (hasOverlaySize) {\n        setPosition(overlay, overlayRect.left, overlayRect.top);\n      } else {\n        setPosition(overlay, toggleRect.left + offsetX, toggleRect.top + offsetY);\n      }\n\n      dragState = {\n        startX: event.clientX,\n        startY: event.clientY,\n        startLeft: toggleRect.left,\n        startTop: toggleRect.top,\n        offsetX,\n        offsetY,\n        toggleWidth: toggleRect.width,\n        toggleHeight: toggleRect.height,\n        moved: false,\n      };\n      lastDragMoved = false;\n\n      document.addEventListener(\"mousemove\", onDrag);\n      document.addEventListener(\"mouseup\", endDrag, { once: true });\n    }\n\n    function onDrag(event) {\n      if (!dragState) return;\n      const deltaX = event.clientX - dragState.startX;\n      const deltaY = event.clientY - dragState.startY;\n      if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {\n        dragState.moved = true;\n      }\n\n      const margin = 8;\n      const maxLeft = window.innerWidth - dragState.toggleWidth - margin;\n      const maxTop = window.innerHeight - dragState.toggleHeight - margin;\n      const nextLeft = Math.min(\n        maxLeft,\n        Math.max(margin, dragState.startLeft + deltaX)\n      );\n      const nextTop = Math.min(\n        maxTop,\n        Math.max(margin, dragState.startTop + deltaY)\n      );\n\n      setPosition(toggle, nextLeft, nextTop);\n      setPosition(overlay, nextLeft + dragState.offsetX, nextTop + dragState.offsetY);\n    }\n\n    function endDrag() {\n      document.removeEventListener(\"mousemove\", onDrag);\n      lastDragMoved = Boolean(dragState && dragState.moved);\n      dragState = null;\n    }\n\n    toggle.addEventListener(\"click\", () => {\n      if (lastDragMoved) {\n        lastDragMoved = false;\n        return;\n      }\n      const isOpen = overlay.classList.toggle(\"pkh-open\");\n      if (isOpen) {\n        positionOverlayNearToggle();\n      }\n    });\n\n    toggle.addEventListener(\"mousedown\", startDrag);\n    overlay.addEventListener(\"mousedown\", startDrag);\n    document.addEventListener(\"mousedown\", (event) => {\n      if (!overlay.classList.contains(\"pkh-open\")) return;\n      if (\n        event.target === toggle ||\n        (event.target &&\n          event.target.closest &&\n          event.target.closest(`#${overlayId}, #${toggleId}`))\n      ) {\n        return;\n      }\n      overlay.classList.remove(\"pkh-open\");\n    });\n    window.addEventListener(\"keydown\", (event) => {\n      if (event.key === \"Escape\") {\n        overlay.classList.remove(\"pkh-open\");\n      }\n    });\n\n    const host = document.body || document.documentElement;\n    host.appendChild(toggle);\n    host.appendChild(overlay);\n\n    renderDomainList();\n    const config = loadConfig();\n    highlightInput.value = config.highlight.join(\", \");\n    excludeInput.value = config.exclude.join(\", \");\n    currentStyle = config.style || \"sticker\";\n    renderStyleGrid();\n\n    saveButton.addEventListener(\"click\", () => {\n      const nextConfig = {\n        highlight: normalizeList(highlightInput.value),\n        exclude: normalizeList(excludeInput.value),\n        style: currentStyle,\n      };\n      saveConfig(nextConfig);\n      scheduleApply();\n    });\n\n    clearButton.addEventListener(\"click\", () => {\n      const nextConfig = {\n        highlight: [],\n        exclude: [],\n        style: currentStyle || \"sticker\",\n      };\n      highlightInput.value = \"\";\n      excludeInput.value = \"\";\n      saveConfig(nextConfig);\n      scheduleApply();\n    });\n  }\n\n  function ensureOverlay() {\n    if (!document.getElementById(toggleId) || !document.getElementById(overlayId)) {\n      if (document.getElementById(toggleId)) {\n        document.getElementById(toggleId).remove();\n      }\n      if (document.getElementById(overlayId)) {\n        document.getElementById(overlayId).remove();\n      }\n      createOverlay();\n    }\n  }\n\n  function setupObserver() {\n    const observer = new MutationObserver(() => {\n      if (isApplying) return;\n      ensureOverlay();\n      scheduleApply();\n    });\n\n    if (document.documentElement) {\n      observer.observe(document.documentElement, {\n        childList: true,\n        subtree: true,\n        characterData: true,\n      });\n    }\n  }\n\n  function init() {\n    createStyles();\n    ensureOverlay();\n    setupObserver();\n    scheduleApply();\n    window.addEventListener(\"hashchange\", scheduleApply);\n    window.addEventListener(\"popstate\", scheduleApply);\n  }\n\n  if (document.readyState === \"loading\") {\n    document.addEventListener(\"DOMContentLoaded\", init, { once: true });\n  } else {\n    init();\n  }\n})();\n
+// ==UserScript==
+// @name         PK Gmail Keyword Highlighter
+// @namespace    https://github.com/mondary
+// @version      0.4.0
+// @description  Highlight keywords with colors and strike-through excluded terms, per site.
+// @match        *://*/*
+// @run-at       document-start
+// @grant        none
+// ==/UserScript==
+
+/*
+Usage:
+- Install with a userscript manager (Tampermonkey/Violentmonkey).
+- Click the "HL" button to open the panel.
+- Enter comma-separated keywords to highlight and exclude, then Save.
+- Settings persist per hostname via localStorage.
+*/
+
+(() => {
+  "use strict";
+
+  const STORAGE_PREFIX = "pkh:keyword-highlighter:";
+  const APPLY_DEBOUNCE_MS = 250;
+  const overlayId = "pkh-overlay";
+  const toggleId = "pkh-toggle";
+  const tokenClass = "pkh-token";
+
+  let applyTimer = null;
+  let isApplying = false;
+  let dragState = null;
+
+  function storageKey() {
+    return STORAGE_PREFIX + window.location.hostname;
+  }
+
+  function loadConfig() {
+    const raw = window.localStorage.getItem(storageKey());
+    if (!raw) {
+      return { highlight: [], exclude: [], style: "sticker" };
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const style =
+        parsed.style === "sticker-v1"
+          ? "origami"
+          : parsed.style === "normal"
+            ? "offset"
+            : parsed.style;
+      return {
+        highlight: Array.isArray(parsed.highlight) ? parsed.highlight : [],
+        exclude: Array.isArray(parsed.exclude) ? parsed.exclude : [],
+        style: typeof style === "string" ? style : "sticker",
+      };
+    } catch {
+      return { highlight: [], exclude: [], style: "sticker" };
+    }
+  }
+
+  function saveConfig(config) {
+    window.localStorage.setItem(storageKey(), JSON.stringify(config));
+  }
+
+  const DOMAINS_KEY = "pkh:enabled-domains";
+
+  function loadEnabledDomains() {
+    const raw = window.localStorage.getItem(DOMAINS_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveEnabledDomains(domains) {
+    window.localStorage.setItem(DOMAINS_KEY, JSON.stringify(domains));
+  }
+
+  function isDomainEnabled() {
+    const domains = loadEnabledDomains();
+    return domains.includes(window.location.hostname);
+  }
+
+  function addCurrentDomain() {
+    const domains = loadEnabledDomains();
+    const hostname = window.location.hostname;
+    if (!domains.includes(hostname)) {
+      domains.push(hostname);
+      saveEnabledDomains(domains);
+    }
+    return domains;
+  }
+
+  function removeDomain(domain) {
+    const domains = loadEnabledDomains();
+    const filtered = domains.filter((d) => d !== domain);
+    saveEnabledDomains(filtered);
+    return filtered;
+  }
+
+  function normalizeList(value) {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function hashString(value) {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
+  function highlightColorFor(word) {
+    const hash = hashString(word.toLowerCase());
+    const hue = hash % 360;
+    return `hsl(${hue} 100% 55%)`;
+  }
+
+  function highlightTiltFor(word) {
+    const hash = hashString(word.toLowerCase());
+    const step = (hash % 5) - 2;
+    return `${step * 0.6}deg`;
+  }
+
+  function textColorFor(bg) {
+    const m = /hsl\((\d+)\s+(\d+)%\s+(\d+)%\)/.exec(bg);
+    if (!m) return "#1a1a1a";
+    const lightness = Number(m[3]);
+    return lightness > 65 ? "#1a1a1a" : "#ffffff";
+  }
+
+  function normalizeToken(value) {
+    return value
+      .toLowerCase()
+      .replace(/[\s\u00A0\u202F\u2009\u2007]+/g, " ")
+      .trim();
+  }
+
+  function buildTokenMap(config) {
+    const highlight = new Map();
+    const exclude = new Set();
+    config.exclude.forEach((word) => {
+      const normalized = normalizeToken(word);
+      if (normalized) exclude.add(normalized);
+    });
+    config.highlight.forEach((word) => {
+      const normalized = normalizeToken(word);
+      if (!normalized || exclude.has(normalized)) return;
+      highlight.set(normalized, word);
+    });
+    return { highlight, exclude };
+  }
+
+  function tokenToPattern(token) {
+    const parts = token.split(" ").map((part) => escapeRegExp(part));
+    return parts.join("[\\s\u00A0\u202F\u2009\u2007]+");
+  }
+
+  function withBoundaries(pattern, token) {
+    const startsWord = /\w/.test(token[0] || "");
+    const endsWord = /\w/.test(token[token.length - 1] || "");
+    let result = pattern;
+    if (startsWord) result = `\\b${result}`;
+    if (endsWord) result = `${result}\\b`;
+    return result;
+  }
+
+  function buildRegexFromList(list) {
+    const all = list.map((word) => normalizeToken(word)).filter(Boolean);
+
+    if (all.length === 0) return null;
+    const unique = Array.from(new Set(all));
+    unique.sort((a, b) => b.length - a.length);
+    const pattern = unique
+      .map((word) => withBoundaries(tokenToPattern(word), word))
+      .join("|");
+    if (!pattern) return null;
+    return new RegExp(pattern, "gi");
+  }
+
+  function shouldSkipElement(el) {
+    if (!el) return true;
+    if (el.id === overlayId || el.id === toggleId) return true;
+    if (el.closest && el.closest(`#${overlayId}, #${toggleId}`)) return true;
+    if (el.closest && el.closest(`.${tokenClass}`)) return true;
+    const tag = el.tagName;
+    if (!tag) return false;
+    if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT") return true;
+    if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
+
+  function clearHighlights() {
+    const tokens = document.querySelectorAll(`span.${tokenClass}`);
+    tokens.forEach((span) => {
+      const text = document.createTextNode(span.textContent || "");
+      span.replaceWith(text);
+    });
+  }
+
+  function collectTextNodes(skipExclude) {
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          if (!node.parentElement) return NodeFilter.FILTER_REJECT;
+          if (shouldSkipElement(node.parentElement)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (
+            skipExclude &&
+            node.parentElement.closest &&
+            node.parentElement.closest('[data-pkh-exclude="1"]')
+          ) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (!node.nodeValue || !node.nodeValue.trim()) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      }
+    );
+
+    const textNodes = [];
+    let current = walker.nextNode();
+    while (current) {
+      textNodes.push(current);
+      current = walker.nextNode();
+    }
+
+    return textNodes;
+  }
+
+  function applyMatches(textNodes, regex, mode, tokenMap, config) {
+    textNodes.forEach((node) => {
+      const text = node.nodeValue;
+      regex.lastIndex = 0;
+
+      let match = regex.exec(text);
+      if (!match) return;
+
+      const frag = document.createDocumentFragment();
+      let lastIndex = 0;
+
+      while (match) {
+        const matchText = match[0];
+        const matchIndex = match.index;
+
+        if (matchIndex > lastIndex) {
+          frag.appendChild(
+            document.createTextNode(text.slice(lastIndex, matchIndex))
+          );
+        }
+
+        const span = document.createElement("span");
+        span.className = tokenClass;
+        span.textContent = matchText;
+
+        if (mode === "exclude") {
+          span.dataset.pkhExclude = "1";
+          span.style.textDecorationLine = "line-through";
+          span.style.textDecorationStyle = "wavy";
+          span.style.textDecorationThickness = "2px";
+          span.style.textDecorationColor = "#b44";
+          span.style.background = "transparent";
+        } else {
+          const normalized = normalizeToken(matchText);
+          if (!tokenMap.highlight.has(normalized)) {
+            frag.appendChild(document.createTextNode(matchText));
+            lastIndex = matchIndex + matchText.length;
+            match = regex.exec(text);
+            continue;
+          }
+
+          const original = tokenMap.highlight.get(normalized) || matchText;
+          const bg = highlightColorFor(original);
+          const tilt = highlightTiltFor(original);
+          span.style.background = bg;
+          span.style.color = textColorFor(bg);
+          span.style.borderRadius = "4px";
+          const styleMode = config.style || "sticker";
+          span.style.padding = "0 3px";
+          span.style.display = "inline-block";
+          span.style.transform = `rotate(${tilt})`;
+          span.style.fontWeight = "700";
+
+          if (styleMode === "normal" || styleMode === "offset") {
+            span.style.borderRadius = "4px";
+            span.style.padding = "0 2px";
+            span.style.textShadow = "none";
+            span.style.background = "transparent";
+            span.style.color = "#1a1a1a";
+            span.style.boxShadow = `3px 3px 0 0 ${bg}`;
+          } else if (styleMode === "bold") {
+            span.style.borderRadius = "4px";
+            span.style.boxShadow = "0 0 0 2px rgba(0, 0, 0, 0.25)";
+            span.style.fontWeight = "700";
+            span.style.textShadow = "0 1px 0 rgba(0, 0, 0, 0.35)";
+          } else if (styleMode === "origami") {
+            span.classList.add("pkh-sticker-v1");
+            span.style.padding = "0.15rem 0.45rem";
+            span.style.borderRadius = "9999px";
+            span.style.fontWeight = "700";
+            span.style.textShadow = "none";
+          } else if (styleMode === "candy") {
+            span.classList.add("pkh-candy");
+            span.dataset.stroke = matchText;
+            span.style.background = "transparent";
+            span.style.color = "#111111";
+            span.style.padding = "0";
+            span.style.fontWeight = "400";
+            span.style.textShadow = "none";
+          } else if (styleMode === "pastel") {
+            span.style.borderRadius = "8px";
+            span.style.padding = "0.12rem 0.5rem";
+            span.style.fontWeight = "700";
+            span.style.textShadow = "none";
+            span.style.boxShadow = "0 2px 0 rgba(0, 0, 0, 0.12)";
+            span.style.backgroundImage =
+              "linear-gradient(120deg, rgba(255, 224, 178, 0.9), rgba(255, 204, 230, 0.9))";
+            span.style.border = "1px solid rgba(0, 0, 0, 0.08)";
+          } else if (styleMode === "neon") {
+            span.style.borderRadius = "10px";
+            span.style.padding = "0.12rem 0.55rem";
+            span.style.fontWeight = "800";
+            span.style.color = "#24001b";
+            span.style.textShadow =
+              "0 1px 0 rgba(255, 255, 255, 0.3), 0 0 8px rgba(255, 45, 154, 0.65)";
+            span.style.boxShadow =
+              "0 0 0 2px rgba(255, 45, 154, 0.7), 0 0 12px rgba(0, 245, 255, 0.55)";
+            span.style.background =
+              "linear-gradient(90deg, rgba(255, 45, 154, 0.85), rgba(0, 245, 255, 0.85))";
+          } else {
+            span.style.borderRadius = "10px";
+            span.style.padding = "1px 5px";
+            span.style.boxShadow =
+              "0 0 0 4px #ffffff, 4px 4px 0 rgba(0, 0, 0, 0.25)";
+            span.style.border = "none";
+            span.style.fontWeight = "700";
+            span.style.textShadow = "0 1px 0 rgba(0, 0, 0, 0.35)";
+            span.style.backgroundImage =
+              "linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(0, 0, 0, 0.1))";
+            span.style.transform = "rotate(-2deg)";
+          }
+        }
+
+        frag.appendChild(span);
+        lastIndex = matchIndex + matchText.length;
+        match = regex.exec(text);
+      }
+
+      if (lastIndex < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+      }
+
+      node.parentNode.replaceChild(frag, node);
+    });
+  }
+
+  function applyHighlights() {
+    if (isApplying) return;
+    if (!isDomainEnabled()) {
+      clearHighlights();
+      return;
+    }
+    isApplying = true;
+
+    try {
+      const config = loadConfig();
+      const tokenMap = buildTokenMap(config);
+      const excludeRegex = buildRegexFromList(config.exclude);
+      const highlightRegex = buildRegexFromList(Array.from(tokenMap.highlight.keys()));
+
+      clearHighlights();
+
+      if (!excludeRegex && !highlightRegex) return;
+
+      if (excludeRegex) {
+        const excludeNodes = collectTextNodes(false);
+        applyMatches(excludeNodes, excludeRegex, "exclude", tokenMap, config);
+      }
+
+      if (highlightRegex) {
+        const highlightNodes = collectTextNodes(true);
+        applyMatches(
+          highlightNodes,
+          highlightRegex,
+          "highlight",
+          tokenMap,
+          config
+        );
+      }
+    } finally {
+      isApplying = false;
+    }
+  }
+
+  function scheduleApply() {
+    if (applyTimer) window.clearTimeout(applyTimer);
+    applyTimer = window.setTimeout(applyHighlights, APPLY_DEBOUNCE_MS);
+  }
+
+  function createStyles() {
+    const style = document.createElement("style");
+    style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
+      @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css');
+
+      #${toggleId} {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 2147483647;
+        width: 36px;
+        height: 36px;
+        border-radius: 18px;
+        border: none;
+        background: #1a1a1a;
+        color: #fff;
+        font: 600 12px/36px ui-sans-serif, system-ui, -apple-system, sans-serif;
+        text-align: center;
+        cursor: pointer;
+        touch-action: none;
+        user-select: none;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #${overlayId} {
+        position: fixed;
+        right: 16px;
+        bottom: 64px;
+        z-index: 2147483647;
+        width: 280px;
+        background: #ffffff;
+        color: #111;
+        border-radius: 10px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+        padding: 12px;
+        font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        display: none;
+        touch-action: none;
+      }
+
+      #${overlayId}.pkh-open {
+        display: block;
+      }
+
+      #${overlayId} label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      #${overlayId} input {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+      }
+
+      #${overlayId} textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-family: inherit;
+        resize: vertical;
+        min-height: 48px;
+      }
+
+      #${overlayId} .pkh-domain-section {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #eee;
+      }
+      #${overlayId} .pkh-close {
+        position: absolute;
+        top: 4px;
+        right: 6px;
+        border: none;
+        background: transparent;
+        color: #777;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 4px 6px;
+      }
+      #${overlayId} .pkh-close:hover {
+        color: #111;
+      }
+
+      #${overlayId} .pkh-domain-list {
+        max-height: 100px;
+        overflow-y: auto;
+        margin-bottom: 8px;
+        border: 1px solid #eee;
+        border-radius: 6px;
+      }
+
+      #${overlayId} .pkh-domain-item {
+        display: flex;
+        align-items: center;
+        padding: 6px 8px;
+        font-size: 11px;
+        border-bottom: 1px solid #f5f5f5;
+      }
+
+      #${overlayId} .pkh-domain-item:last-child {
+        border-bottom: none;
+      }
+
+      #${overlayId} .pkh-domain-item.is-current {
+        background: #f0f7ff;
+      }
+
+      #${overlayId} .pkh-domain-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #${overlayId} .pkh-domain-current {
+        font-size: 9px;
+        color: #666;
+        margin-left: 4px;
+      }
+
+      #${overlayId} .pkh-domain-remove {
+        background: none;
+        border: none;
+        color: #999;
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 14px;
+        line-height: 1;
+        flex: none;
+      }
+
+      #${overlayId} .pkh-domain-remove:hover {
+        color: #c00;
+      }
+
+      #${overlayId} .pkh-add-domain {
+        width: 100%;
+        background: #f5f5f5;
+        border: 1px dashed #ccc;
+        border-radius: 6px;
+        padding: 8px;
+        cursor: pointer;
+        font-size: 11px;
+        color: #666;
+      }
+
+      #${overlayId} .pkh-add-domain:hover {
+        background: #eee;
+        border-color: #999;
+      }
+
+      #${overlayId} .pkh-empty-domains {
+        padding: 12px;
+        text-align: center;
+        color: #999;
+        font-size: 11px;
+      }
+
+      #${overlayId} select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        background: #fff;
+      }
+
+      #${overlayId} .pkh-style-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+
+      #${overlayId} .pkh-style-item {
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        border-radius: 8px;
+        padding: 6px;
+        background: #fff;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        min-height: 34px;
+        transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+      }
+
+      #${overlayId} .pkh-style-item.is-active {
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+        transform: translateY(-1px);
+      }
+
+      #${overlayId} .pkh-style-preview {
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.2;
+        display: inline-block;
+      }
+
+      #${overlayId} .pkh-preview-normal {
+        background: #ffe16a;
+        color: #1a1a1a;
+        border-radius: 4px;
+        padding: 0 2px;
+      }
+
+      #${overlayId} .pkh-preview-offset {
+        color: #1a1a1a;
+        border-radius: 4px;
+        padding: 0 2px;
+        box-shadow: 3px 3px 0 0 #ffe16a;
+      }
+
+      #${overlayId} .pkh-preview-bold {
+        background: #ffd35c;
+        color: #1a1a1a;
+        border-radius: 4px;
+        padding: 0 2px;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);
+      }
+
+      #${overlayId} .pkh-preview-origami {
+        border-radius: 9999px;
+        padding: 0.1rem 0.45rem;
+        background: #ffd35c;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+        position: relative;
+      }
+
+      #${overlayId} .pkh-preview-origami::after {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        top: -2px;
+        right: -2px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.6);
+        border: 1px solid #fff;
+      }
+
+      #${overlayId} .pkh-preview-candy {
+        font-family: "Fredoka One", cursive;
+        color: #111;
+        text-shadow: 0 0 0 #fff;
+      }
+
+      #${overlayId} .pkh-preview-sticker {
+        border-radius: 10px;
+        padding: 0 4px;
+        background: linear-gradient(135deg, rgba(65, 136, 241, 0.95), rgba(22, 84, 170, 0.9));
+        box-shadow: 0 0 0 4px #ffffff, 4px 4px 0 rgba(0, 0, 0, 0.25);
+        transform: rotate(-2deg);
+      }
+
+      #${overlayId} .pkh-preview-pastel {
+        border-radius: 8px;
+        padding: 0.1rem 0.45rem;
+        background: linear-gradient(120deg, rgba(255, 224, 178, 0.9), rgba(255, 204, 230, 0.9));
+        box-shadow: 0 2px 0 rgba(0, 0, 0, 0.12);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+      }
+
+      #${overlayId} .pkh-preview-neon {
+        border-radius: 10px;
+        padding: 0.1rem 0.5rem;
+        color: #24001b;
+        background: linear-gradient(90deg, rgba(255, 45, 154, 0.85), rgba(0, 245, 255, 0.85));
+        box-shadow: 0 0 0 2px rgba(255, 45, 154, 0.7), 0 0 12px rgba(0, 245, 255, 0.55);
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+
+      #${overlayId} .pkh-actions {
+        display: flex;
+        gap: 6px;
+      }
+
+      #${overlayId} button {
+        flex: 1;
+        border: none;
+        border-radius: 6px;
+        padding: 6px;
+        cursor: pointer;
+        background: #1a1a1a;
+        color: #fff;
+        font-weight: 600;
+      }
+
+      #${overlayId} button.pkh-secondary {
+        background: #efefef;
+        color: #222;
+      }
+
+      /* Sticker v1.0.1 - https://github.com/yepteam/sticker-button (MIT) */
+      .pkh-sticker-v1 {
+        vertical-align: middle;
+        box-sizing: border-box;
+        border-radius: 9999px;
+        white-space: nowrap;
+        position: relative;
+        transition: clip-path 0.3s ease-out;
+        box-shadow: none !important;
+        border-width: 1px;
+        font-size: 1rem;
+        padding-top: 0.375rem;
+        padding-bottom: 0.375rem;
+        line-height: 1.5;
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% + 0.1837068893rem) 100%,
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% + 0.1837068893rem) 100%,
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1::after {
+        content: "";
+        position: absolute;
+        display: block;
+        height: 2.375rem;
+        width: 2.375rem;
+        top: -1px;
+        right: -1px;
+        transform: rotate(-30deg) translateX(1.1875rem);
+        border-radius: 9999px;
+        background-color: rgba(255, 255, 255, 0.5);
+        border: 1px solid #fff;
+        transition: transform 0.3s ease-out;
+      }
+
+      .pkh-sticker-v1:not(.pkh-sticker-corner-static):hover {
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 0.6732974165rem) -0.296875rem,
+          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 0.6732974165rem) -0.296875rem,
+          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1:not(.pkh-sticker-corner-static):hover::after {
+        transform: rotate(-30deg) translateX(2.375rem);
+      }
+
+      .pkh-sticker-v1.pkh-sticker-corner-hover {
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 0.6732974165rem) -0.296875rem,
+          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 0.6732974165rem) -0.296875rem,
+          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1.pkh-sticker-corner-hover::after {
+        transform: rotate(-30deg) translateX(2.375rem);
+      }
+
+      .pkh-sticker-v1.pkh-sticker-corner-hover:hover {
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% + 0.1837068893rem) 100%,
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% + 0.1837068893rem) 100%,
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1.pkh-sticker-corner-hover:hover::after {
+        transform: rotate(-30deg) translateX(1.1875rem);
+      }
+
+      .pkh-sticker-v1[data-bs-toggle="button"] {
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 0.6732974165rem) -0.296875rem,
+          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 0.6732974165rem) -0.296875rem,
+          calc(100% + 0.6979094728rem) calc(100% - 0.296875rem),
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1[data-bs-toggle="button"]::after {
+        transform: rotate(-30deg) translateX(2.375rem);
+      }
+
+      .pkh-sticker-v1[data-bs-toggle="button"].active {
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% + 0.1837068893rem) 100%,
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% - 1.1875rem) 0,
+          calc(100% + 0.1837068893rem) 100%,
+          calc(100% + 0.1837068893rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1[data-bs-toggle="button"].active::after {
+        transform: rotate(-30deg) translateX(1.1875rem);
+      }
+
+      .pkh-sticker-shadow {
+        filter: drop-shadow(0 1rem 0.5rem rgba(0, 0, 0, 0.25));
+      }
+
+      .pkh-sticker-v1.pkh-sticker-lg {
+        border-width: 1px;
+        font-size: 1.25rem;
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+        line-height: 1.5;
+        -webkit-clip-path: polygon(
+          0 0,
+          calc(100% - 1.5rem) 0,
+          calc(100% - 1.5rem) 0,
+          calc(100% + 0.2320508076rem) 100%,
+          calc(100% + 0.2320508076rem) 100%,
+          0 100%
+        );
+        clip-path: polygon(
+          0 0,
+          calc(100% - 1.5rem) 0,
+          calc(100% - 1.5rem) 0,
+          calc(100% + 0.2320508076rem) 100%,
+          calc(100% + 0.2320508076rem) 100%,
+          0 100%
+        );
+      }
+
+      .pkh-sticker-v1.pkh-sticker-lg::after {
+        height: 3rem;
+        width: 3rem;
+        top: -1px;
+        right: -1px;
+        transform: rotate(-30deg) translateX(1.5rem);
+      }
+
+      .pkh-candy {
+        position: relative;
+        font-family: "Fredoka One", cursive;
+        font-size: 18px;
+        filter: drop-shadow(0 0 5px #777);
+      }
+
+      .pkh-candy::before,
+      .pkh-candy::after {
+        content: attr(data-stroke);
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: -1;
+        -webkit-text-stroke: 9px #ffffff;
+        text-shadow: none;
+      }
+
+      .pkh-candy::after {
+        z-index: 0;
+        -webkit-text-stroke: 0 transparent;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function createOverlay() {
+    const toggle = document.createElement("button");
+    toggle.id = toggleId;
+    toggle.type = "button";
+    toggle.setAttribute("aria-label", "Keyword Highlighter");
+    toggle.title = "Keyword Highlighter";
+    const icon = document.createElement("i");
+    icon.className = "fa-solid fa-highlighter";
+    toggle.appendChild(icon);
+
+    const overlay = document.createElement("div");
+    overlay.id = overlayId;
+
+    // Domain section
+    const domainSection = document.createElement("div");
+    domainSection.className = "pkh-domain-section";
+
+    const domainLabel = document.createElement("label");
+    domainLabel.textContent = "Sites actifs";
+
+    const domainList = document.createElement("div");
+    domainList.className = "pkh-domain-list";
+    domainList.id = "pkh-domain-list";
+
+    const addDomainBtn = document.createElement("button");
+    addDomainBtn.type = "button";
+    addDomainBtn.className = "pkh-add-domain";
+    addDomainBtn.id = "pkh-add-domain";
+
+    function renderDomainList() {
+      const domains = loadEnabledDomains();
+      const currentHost = window.location.hostname;
+      const isCurrentEnabled = domains.includes(currentHost);
+
+      while (domainList.firstChild) {
+        domainList.removeChild(domainList.firstChild);
+      }
+
+      if (domains.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "pkh-empty-domains";
+        empty.textContent = "Aucun site actif";
+        domainList.appendChild(empty);
+      } else {
+        domains.forEach((domain) => {
+          const item = document.createElement("div");
+          item.className = "pkh-domain-item";
+          if (domain === currentHost) {
+            item.classList.add("is-current");
+          }
+
+          const name = document.createElement("span");
+          name.className = "pkh-domain-name";
+          name.textContent = domain;
+
+          if (domain === currentHost) {
+            const currentBadge = document.createElement("span");
+            currentBadge.className = "pkh-domain-current";
+            currentBadge.textContent = "(actuel)";
+            name.appendChild(currentBadge);
+          }
+
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "pkh-domain-remove";
+          removeBtn.textContent = "×";
+          removeBtn.addEventListener("click", () => {
+            removeDomain(domain);
+            renderDomainList();
+            scheduleApply();
+          });
+
+          item.appendChild(name);
+          item.appendChild(removeBtn);
+          domainList.appendChild(item);
+        });
+      }
+
+      if (isCurrentEnabled) {
+        addDomainBtn.textContent = "✓ Site actif";
+        addDomainBtn.disabled = true;
+        addDomainBtn.style.opacity = "0.5";
+        addDomainBtn.style.cursor = "default";
+      } else {
+        addDomainBtn.textContent = "+ Ajouter ce site";
+        addDomainBtn.disabled = false;
+        addDomainBtn.style.opacity = "1";
+        addDomainBtn.style.cursor = "pointer";
+      }
+    }
+
+    addDomainBtn.addEventListener("click", () => {
+      if (!addDomainBtn.disabled) {
+        addCurrentDomain();
+        renderDomainList();
+        scheduleApply();
+      }
+    });
+
+    domainSection.appendChild(domainLabel);
+    domainSection.appendChild(domainList);
+    domainSection.appendChild(addDomainBtn);
+
+    const highlightLabel = document.createElement("label");
+    highlightLabel.setAttribute("for", "pkh-highlight");
+    highlightLabel.textContent = "Highlight";
+
+    const highlightInput = document.createElement("textarea");
+    highlightInput.id = "pkh-highlight";
+    highlightInput.placeholder = "X-Design, Job, YouTube";
+    highlightInput.rows = 2;
+
+    const excludeLabel = document.createElement("label");
+    excludeLabel.setAttribute("for", "pkh-exclude");
+    excludeLabel.textContent = "Exclude";
+
+    const excludeInput = document.createElement("textarea");
+    excludeInput.id = "pkh-exclude";
+    excludeInput.placeholder = "marketing";
+    excludeInput.rows = 2;
+
+    const styleLabel = document.createElement("label");
+    styleLabel.textContent = "Style";
+
+    const styleGrid = document.createElement("div");
+    styleGrid.className = "pkh-style-grid";
+
+    const styles = [
+      { id: "sticker", label: "Sticker", previewClass: "pkh-preview-sticker" },
+      { id: "candy", label: "Candy", previewClass: "pkh-preview-candy" },
+      { id: "offset", label: "Offset", previewClass: "pkh-preview-offset" },
+      { id: "bold", label: "Bold", previewClass: "pkh-preview-bold" },
+      { id: "origami", label: "Origami", previewClass: "pkh-preview-origami" },
+      { id: "pastel", label: "Pastel", previewClass: "pkh-preview-pastel" },
+      { id: "neon", label: "Synthwave", previewClass: "pkh-preview-neon" },
+    ];
+
+    let currentStyle = "sticker";
+
+    function renderStyleGrid() {
+      while (styleGrid.firstChild) {
+        styleGrid.removeChild(styleGrid.firstChild);
+      }
+      styles.forEach((style) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "pkh-style-item";
+        button.dataset.style = style.id;
+
+        if (style.id === currentStyle) {
+          button.classList.add("is-active");
+        }
+
+        const preview = document.createElement("span");
+        preview.className = `pkh-style-preview ${style.previewClass}`;
+        preview.textContent = style.label;
+        button.appendChild(preview);
+
+        button.addEventListener("click", () => {
+          currentStyle = style.id;
+          renderStyleGrid();
+        });
+
+        styleGrid.appendChild(button);
+      });
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "pkh-actions";
+
+    const saveButton = document.createElement("button");
+    saveButton.id = "pkh-save";
+    saveButton.type = "button";
+    saveButton.textContent = "Save";
+
+    const clearButton = document.createElement("button");
+    clearButton.id = "pkh-clear";
+    clearButton.type = "button";
+    clearButton.className = "pkh-secondary";
+    clearButton.textContent = "Clear";
+
+    actions.appendChild(saveButton);
+    actions.appendChild(clearButton);
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "pkh-close";
+    closeButton.setAttribute("aria-label", "Fermer");
+    closeButton.textContent = "×";
+    closeButton.addEventListener("click", () => {
+      overlay.classList.remove("pkh-open");
+    });
+
+    overlay.appendChild(closeButton);
+    overlay.appendChild(domainSection);
+    overlay.appendChild(highlightLabel);
+    overlay.appendChild(highlightInput);
+    overlay.appendChild(excludeLabel);
+    overlay.appendChild(excludeInput);
+    overlay.appendChild(styleLabel);
+    overlay.appendChild(styleGrid);
+    overlay.appendChild(actions);
+
+    let lastDragMoved = false;
+
+    function setPosition(el, left, top) {
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+    }
+
+    function positionOverlayNearToggle() {
+      const toggleRect = toggle.getBoundingClientRect();
+      const overlayRect = overlay.getBoundingClientRect();
+      const gap = 8;
+      const margin = 8;
+      const left = Math.min(
+        window.innerWidth - overlayRect.width - margin,
+        Math.max(margin, toggleRect.left)
+      );
+      const top = Math.max(
+        margin,
+        toggleRect.top - overlayRect.height - gap
+      );
+      setPosition(overlay, left, top);
+    }
+
+    function startDrag(event) {
+      if (event.type === "mousedown" && event.button !== 0) return;
+      if (
+        event.target !== toggle &&
+        event.target &&
+        event.target.closest &&
+        event.target.closest("input, select, button, textarea")
+      ) {
+        return;
+      }
+
+      const toggleRect = toggle.getBoundingClientRect();
+      const overlayRect = overlay.getBoundingClientRect();
+      const hasOverlaySize = overlayRect.width > 0 && overlayRect.height > 0;
+      const offsetX = hasOverlaySize ? overlayRect.left - toggleRect.left : 0;
+      const offsetY = hasOverlaySize ? overlayRect.top - toggleRect.top : -48;
+
+      setPosition(toggle, toggleRect.left, toggleRect.top);
+      if (hasOverlaySize) {
+        setPosition(overlay, overlayRect.left, overlayRect.top);
+      } else {
+        setPosition(overlay, toggleRect.left + offsetX, toggleRect.top + offsetY);
+      }
+
+      dragState = {
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft: toggleRect.left,
+        startTop: toggleRect.top,
+        offsetX,
+        offsetY,
+        toggleWidth: toggleRect.width,
+        toggleHeight: toggleRect.height,
+        moved: false,
+      };
+      lastDragMoved = false;
+
+      document.addEventListener("mousemove", onDrag);
+      document.addEventListener("mouseup", endDrag, { once: true });
+    }
+
+    function onDrag(event) {
+      if (!dragState) return;
+      const deltaX = event.clientX - dragState.startX;
+      const deltaY = event.clientY - dragState.startY;
+      if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+        dragState.moved = true;
+      }
+
+      const margin = 8;
+      const maxLeft = window.innerWidth - dragState.toggleWidth - margin;
+      const maxTop = window.innerHeight - dragState.toggleHeight - margin;
+      const nextLeft = Math.min(
+        maxLeft,
+        Math.max(margin, dragState.startLeft + deltaX)
+      );
+      const nextTop = Math.min(
+        maxTop,
+        Math.max(margin, dragState.startTop + deltaY)
+      );
+
+      setPosition(toggle, nextLeft, nextTop);
+      setPosition(overlay, nextLeft + dragState.offsetX, nextTop + dragState.offsetY);
+    }
+
+    function endDrag() {
+      document.removeEventListener("mousemove", onDrag);
+      lastDragMoved = Boolean(dragState && dragState.moved);
+      dragState = null;
+    }
+
+    toggle.addEventListener("click", () => {
+      if (lastDragMoved) {
+        lastDragMoved = false;
+        return;
+      }
+      const isOpen = overlay.classList.toggle("pkh-open");
+      if (isOpen) {
+        positionOverlayNearToggle();
+      }
+    });
+
+    toggle.addEventListener("mousedown", startDrag);
+    overlay.addEventListener("mousedown", startDrag);
+    document.addEventListener("mousedown", (event) => {
+      if (!overlay.classList.contains("pkh-open")) return;
+      if (
+        event.target === toggle ||
+        (event.target &&
+          event.target.closest &&
+          event.target.closest(`#${overlayId}, #${toggleId}`))
+      ) {
+        return;
+      }
+      overlay.classList.remove("pkh-open");
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        overlay.classList.remove("pkh-open");
+      }
+    });
+
+    const host = document.body || document.documentElement;
+    host.appendChild(toggle);
+    host.appendChild(overlay);
+
+    renderDomainList();
+    const config = loadConfig();
+    highlightInput.value = config.highlight.join(", ");
+    excludeInput.value = config.exclude.join(", ");
+    currentStyle = config.style || "sticker";
+    renderStyleGrid();
+
+    saveButton.addEventListener("click", () => {
+      const nextConfig = {
+        highlight: normalizeList(highlightInput.value),
+        exclude: normalizeList(excludeInput.value),
+        style: currentStyle,
+      };
+      saveConfig(nextConfig);
+      scheduleApply();
+    });
+
+    clearButton.addEventListener("click", () => {
+      const nextConfig = {
+        highlight: [],
+        exclude: [],
+        style: currentStyle || "sticker",
+      };
+      highlightInput.value = "";
+      excludeInput.value = "";
+      saveConfig(nextConfig);
+      scheduleApply();
+    });
+  }
+
+  function ensureOverlay() {
+    if (!document.getElementById(toggleId) || !document.getElementById(overlayId)) {
+      if (document.getElementById(toggleId)) {
+        document.getElementById(toggleId).remove();
+      }
+      if (document.getElementById(overlayId)) {
+        document.getElementById(overlayId).remove();
+      }
+      createOverlay();
+    }
+  }
+
+  function setupObserver() {
+    const observer = new MutationObserver(() => {
+      if (isApplying) return;
+      ensureOverlay();
+      scheduleApply();
+    });
+
+    if (document.documentElement) {
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    }
+  }
+
+  function init() {
+    createStyles();
+    ensureOverlay();
+    setupObserver();
+    scheduleApply();
+    window.addEventListener("hashchange", scheduleApply);
+    window.addEventListener("popstate", scheduleApply);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+})();
